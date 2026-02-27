@@ -575,6 +575,7 @@ const styles = StyleSheet.create({
   gridWrap: {
     gap: 10,
     paddingBottom: 20,
+    width: '100%',
   },
   gridWrapTablet: {
     flexDirection: 'row',
@@ -588,8 +589,12 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     width: '100%',
   },
-  cardWrapGrid: {
+  cardWrapGrid2: {
     width: '48%',
+    flex: 0,
+  },
+  cardWrapGrid3: {
+    width: '32%',
     flex: 0,
   },
   spaceCard: {
