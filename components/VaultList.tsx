@@ -476,7 +476,6 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.body,
   },
   composerBtn: {
-    minWidth: 144,
     minHeight: 52,
     borderRadius: theme.radius.pill,
     backgroundColor: '#1B925B',
@@ -484,7 +483,7 @@ const styles = StyleSheet.create({
     borderColor: '#187A4D',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     ...shadows.float,
   },
   composerBtnJoin: {

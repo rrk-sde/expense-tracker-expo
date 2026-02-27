@@ -34,8 +34,6 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <SafeAreaView style={styles.app}>
           <StatusBar barStyle="dark-content" backgroundColor={theme.colors.bg} />
-          <View style={styles.topFade} />
-          <View style={styles.bottomFade} />
           {content}
         </SafeAreaView>
       </QueryClientProvider>
@@ -48,23 +46,5 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.bg,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  topFade: {
-    position: 'absolute',
-    top: -130,
-    left: -80,
-    width: 340,
-    height: 260,
-    borderRadius: 220,
-    backgroundColor: theme.colors.bgDeep,
-  },
-  bottomFade: {
-    position: 'absolute',
-    right: -100,
-    bottom: -150,
-    width: 380,
-    height: 310,
-    borderRadius: 240,
-    backgroundColor: theme.colors.bgSoft,
   }
 });
