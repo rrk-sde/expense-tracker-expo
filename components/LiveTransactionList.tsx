@@ -72,6 +72,10 @@ const parsePayload = async (res: Response) => {
   try {
     return raw ? JSON.parse(raw) : {};
   } catch {
+    if (raw.trim().startsWith('<')) {
+      if (res.status === 413) return { error: 'Image too large. Try a smaller photo.' };
+      return { error: `Server error (${res.status})` };
+    }
     return { error: raw || `Request failed (${res.status})` };
   }
 };
