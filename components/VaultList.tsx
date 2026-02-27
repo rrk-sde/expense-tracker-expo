@@ -11,6 +11,7 @@ import {
   View,
   useWindowDimensions,
   ScrollView,
+  Modal,
 } from 'react-native';
 
 import { shadows, theme } from '../theme';
@@ -61,6 +62,11 @@ export default function VaultList({
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [recentFeed, setRecentFeed] = useState<FeedItem[]>([]);
 
+  const [membersModalVisible, setMembersModalVisible] = useState(false);
+  const [membersData, setMembersData] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersVaultName, setMembersVaultName] = useState('');
+
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
   const templates = ['Trip', 'Flat', 'Family', 'Office', 'Groceries'];
@@ -92,6 +98,24 @@ export default function VaultList({
       console.error('Failed to load spaces', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadVaultMembers = async (vaultId: string, vaultName: string) => {
+    setMembersVaultName(vaultName);
+    setMembersModalVisible(true);
+    setMembersLoading(true);
+    setMembersData([]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/members?userId=${user.id}`);
+      const data = await res.json();
+      if (res.ok) {
+        setMembersData(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch members', e);
+    } finally {
+      setMembersLoading(false);
     }
   };
 
@@ -212,9 +236,15 @@ export default function VaultList({
           </View>
 
           <View style={styles.spaceMetaRow}>
-            <View style={styles.spaceChip}>
+            <TouchableOpacity
+              style={styles.spaceChip}
+              onPress={(e) => {
+                e.stopPropagation();
+                loadVaultMembers(item.id, item.name);
+              }}
+            >
               <Text style={styles.spaceChipText}>Members {item.memberCount || 1}</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.spaceChip}>
               <Text style={styles.spaceChipText}>Live tracking</Text>
             </View>
@@ -359,6 +389,29 @@ export default function VaultList({
         <Text style={styles.bottomDot}>•</Text>
         <Text style={styles.bottomText}>{summary.activeSpaces || 0} active</Text>
       </View>
+
+      <Modal visible={membersModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{membersVaultName} Members</Text>
+            {membersLoading ? (
+              <ActivityIndicator color={theme.colors.brand} />
+            ) : (
+              <ScrollView style={styles.membersList} showsVerticalScrollIndicator={false}>
+                {membersData.map((m: any) => (
+                  <View key={m.userId} style={styles.memberRow}>
+                    <Text style={styles.memberName}>{m.user?.name || 'Unknown'}</Text>
+                    <Text style={styles.memberEmail}>{m.user?.email || ''}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setMembersModalVisible(false)}>
+              <Text style={styles.modalCancelText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -750,5 +803,55 @@ const styles = StyleSheet.create({
   bottomDot: {
     color: '#80B99E',
     fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: theme.radius.xl,
+    padding: 24,
+    ...shadows.float,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: theme.colors.textPrimary,
+    fontFamily: theme.typography.display,
+    marginBottom: 16,
+  },
+  membersList: {
+    maxHeight: 300,
+  },
+  memberRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.textPrimary,
+    fontFamily: theme.typography.body,
+  },
+  memberEmail: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    fontFamily: theme.typography.body,
+  },
+  modalCancelBtn: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#F0F6F2',
+    borderRadius: theme.radius.md,
+  },
+  modalCancelText: {
+    fontWeight: '700',
+    color: theme.colors.brandStrong,
+    fontFamily: theme.typography.body,
   },
 });
