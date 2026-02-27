@@ -36,7 +36,15 @@ type FeedItem = {
   time: string;
 };
 
-export default function VaultList({ user, onSelectVault }: { user: any; onSelectVault: (vaultId: string) => void }) {
+export default function VaultList({
+  user,
+  onSelectVault,
+  onLogout,
+}: {
+  user: any;
+  onSelectVault: (vaultId: string) => void;
+  onLogout: () => void;
+}) {
   const { width } = useWindowDimensions();
   const isLarge = width >= 1200;
   const isTablet = width >= 760;
@@ -237,7 +245,12 @@ export default function VaultList({ user, onSelectVault }: { user: any; onSelect
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.container, isLarge && styles.containerWide]}>
           <View style={styles.heroCard}>
-            <Text style={styles.heroKicker}>WORKSPACES</Text>
+            <View style={styles.heroHeader}>
+              <Text style={styles.heroKicker}>WORKSPACES</Text>
+              <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
+                <Text style={styles.logoutBtnText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.heroTitle}>Create and manage money spaces for every group.</Text>
             <Text style={styles.heroSubtitle}>
               Build a dedicated board for trips, home expenses, teams, and events. Everything updates in real time.
@@ -379,6 +392,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.1,
     fontWeight: '800',
+    fontFamily: theme.typography.body,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoutBtn: {
+    borderRadius: theme.radius.pill,
+    backgroundColor: '#1B4D36',
+    borderWidth: 1,
+    borderColor: '#2D614A',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  logoutBtnText: {
+    color: '#D0E9DD',
+    fontSize: 12,
+    fontWeight: '700',
     fontFamily: theme.typography.body,
   },
   heroTitle: {

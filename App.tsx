@@ -24,7 +24,7 @@ export default function App() {
   const content = !user ? (
     <LoginScreen onLogin={setUser} />
   ) : !selectedVaultId ? (
-    <VaultList user={user} onSelectVault={setSelectedVaultId} />
+    <VaultList user={user} onSelectVault={setSelectedVaultId} onLogout={() => setUser(null)} />
   ) : (
     <LiveTransactionList vaultId={selectedVaultId} user={user} onBack={() => setSelectedVaultId(null)} />
   );
