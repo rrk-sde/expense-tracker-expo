@@ -346,7 +346,7 @@ export default function LiveTransactionList({
         setTxnType(txns[0].type === 'CR' ? 'CR' : 'DR');
         setQuickAddText('');
         setIsModalVisible(true);
-        setNotice({ type: 'success', message: 'AI parsed your request!' });
+        setNotice({ type: 'success', message: data.joke ? `AI Parsed!\n😄 ${data.joke}` : 'AI parsed your request!' });
       } else {
         // Multiple transactions → save all directly
         let successCount = 0;
@@ -369,7 +369,8 @@ export default function LiveTransactionList({
         }
         setQuickAddText('');
         if (successCount > 0) {
-          setNotice({ type: 'success', message: `✅ ${successCount} transactions added by AI!` });
+          const msg = data.joke ? `✅ ${successCount} added by AI!\n😄 ${data.joke}` : `✅ ${successCount} transactions added by AI!`;
+          setNotice({ type: 'success', message: msg });
           queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
           queryClient.invalidateQueries({ queryKey: ['velocity', vaultId, user.id] });
         } else {
