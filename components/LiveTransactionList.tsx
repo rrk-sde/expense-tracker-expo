@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import Pusher from 'pusher-js';
 
 import { shadows, theme } from '../theme';
@@ -370,6 +371,49 @@ export default function LiveTransactionList({
     }
   };
 
+  const handleScanReceipt = async () => {
+    try {
+      setNotice(null);
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setNotice({ type: 'error', message: 'Camera roll permission required' });
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        allowsEditing: true,
+        quality: 0.5,
+      });
+
+      if (!result.canceled && result.assets[0].base64) {
+        setIsSubmitting(true);
+        setIsModalVisible(true); // Open the modal so they can see the auto-fill happening
+        setNotice({ type: 'success', message: 'Scanning receipt with AI...' });
+
+        const res = await fetch(`${API_BASE_URL}/api/gemini/receipt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: result.assets[0].base64,
+            mimeType: result.assets[0].mimeType || 'image/jpeg',
+          }),
+        });
+
+        const parsed = await parsePayload(res);
+        if (!res.ok) throw new Error(parsed?.error || 'AI scan failed');
+
+        if (parsed.title) setTxnTitle(parsed.title);
+        if (parsed.amount) setAmountStr(String(parsed.amount));
+        setNotice({ type: 'success', message: `AI Scanned: ${parsed.category || 'Receipt'}` });
+      }
+    } catch (e: any) {
+      setNotice({ type: 'error', message: e.message || 'Scanning error' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const isValidDateString = (value: string) => {
     if (!value) return true;
     const regex = /^\d{4}-\d{2}-\d{2}$/;
@@ -564,7 +608,11 @@ export default function LiveTransactionList({
             />
 
             <View style={styles.modalActionRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsModalVisible(false)}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={handleScanReceipt} disabled={isSubmitting}>
+                <Text style={styles.modalCancelText}>🎥 Scan AI</Text>
+              </TouchableOpacity>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsModalVisible(false)} disabled={isSubmitting}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
