@@ -347,12 +347,11 @@ export default function LiveTransactionList({
         setQuickAddText('');
         setIsModalVisible(true);
         setNotice({ type: 'success', message: 'AI parsed your request!' });
-      } else {
         // Multiple transactions → save all directly
         let successCount = 0;
         for (const txn of txns) {
           try {
-            await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/transactions`, {
+            const resTxn = await fetch(`${API_BASE_URL}/api/transactions`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -360,15 +359,21 @@ export default function LiveTransactionList({
                 amount: Number(txn.amount),
                 type: txn.type === 'CR' ? 'CR' : 'DR',
                 category: txn.category || 'Other',
-                userId: user.id,
+                creatorId: user.id,
+                vaultId,
               }),
             });
-            successCount++;
+            if (resTxn.ok) successCount++;
           } catch { }
         }
         setQuickAddText('');
-        setNotice({ type: 'success', message: `✅ ${successCount} transactions added by AI!` });
-        queryClient.invalidateQueries({ queryKey: ['transactions', vaultId] });
+        if (successCount > 0) {
+          setNotice({ type: 'success', message: `✅ ${successCount} transactions added by AI!` });
+          queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
+          queryClient.invalidateQueries({ queryKey: ['velocity', vaultId, user.id] });
+        } else {
+          setNotice({ type: 'error', message: 'Failed to add transactions.' });
+        }
       }
     } catch (e: any) {
       setNotice({ type: 'error', message: e.message });
