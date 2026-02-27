@@ -372,13 +372,15 @@ export default function LiveTransactionList({
 
           <View style={styles.txnRight}>
             <Text style={styles.txnAmount}>₹{Number(item.amount).toFixed(2)}</Text>
-            <TouchableOpacity style={styles.removeBtn} onPress={() => setConfirmDeleteId(item.id)} disabled={isDeletingId === item.id}>
-              {isDeletingId === item.id ? (
-                <ActivityIndicator size="small" color={theme.colors.danger} />
-              ) : (
-                <Text style={styles.removeText}>Remove</Text>
-              )}
-            </TouchableOpacity>
+            {item.creatorId === user.id && (
+              <TouchableOpacity style={styles.removeBtn} onPress={() => setConfirmDeleteId(item.id)} disabled={isDeletingId === item.id}>
+                {isDeletingId === item.id ? (
+                  <ActivityIndicator size="small" color={theme.colors.danger} />
+                ) : (
+                  <Text style={styles.removeText}>Remove</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       );

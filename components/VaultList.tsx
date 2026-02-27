@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
+  ScrollView,
 } from 'react-native';
 
 import { shadows, theme } from '../theme';
@@ -233,95 +234,93 @@ export default function VaultList({ user, onSelectVault }: { user: any; onSelect
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.container, isLarge && styles.containerWide]}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroKicker}>WORKSPACES</Text>
-          <Text style={styles.heroTitle}>Create and manage money spaces for every group.</Text>
-          <Text style={styles.heroSubtitle}>
-            Build a dedicated board for trips, home expenses, teams, and events. Everything updates in real time.
-          </Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.container, isLarge && styles.containerWide]}>
+          <View style={styles.heroCard}>
+            <Text style={styles.heroKicker}>WORKSPACES</Text>
+            <Text style={styles.heroTitle}>Create and manage money spaces for every group.</Text>
+            <Text style={styles.heroSubtitle}>
+              Build a dedicated board for trips, home expenses, teams, and events. Everything updates in real time.
+            </Text>
 
-          <View style={styles.insightRow}>
-            {insights.map((item) => (
-              <View key={item.title} style={styles.insightItem}>
-                <Text style={styles.insightValue}>{item.value}</Text>
-                <Text style={styles.insightTitle}>{item.title}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.composerCard}>
-          <View style={styles.segmented}>
-            <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
-              <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
-              <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.composerRow}>
-            <TextInput
-              style={styles.composerInput}
-              placeholder={actionMode === 'create' ? 'Name your space' : 'Enter invite code'}
-              placeholderTextColor={theme.colors.textMuted}
-              value={actionMode === 'create' ? newVaultName : joinCode}
-              onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
-              onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-              autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
-            />
-
-            <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
-              <TouchableOpacity
-                style={[
-                  styles.composerBtn,
-                  actionMode === 'join' && styles.composerBtnJoin,
-                  !isPrimaryEnabled && styles.composerBtnDisabled,
-                ]}
-                onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                disabled={!isPrimaryEnabled}
-              >
-                {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-
-          {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
-
-          {actionMode === 'create' && (
-            <View style={styles.templateRow}>
-              {templates.map((name) => (
-                <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
-                  <Text style={styles.templateChipText}>+ {name}</Text>
-                </TouchableOpacity>
+            <View style={styles.insightRow}>
+              {insights.map((item) => (
+                <View key={item.title} style={styles.insightItem}>
+                  <Text style={styles.insightValue}>{item.value}</Text>
+                  <Text style={styles.insightTitle}>{item.title}</Text>
+                </View>
               ))}
             </View>
-          )}
-        </View>
+          </View>
 
-        {loading ? (
-          <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 26 }} />
-        ) : (
-          <FlatList
-            key={numColumns}
-            data={vaults}
-            keyExtractor={(item) => item.id}
-            renderItem={renderSpace}
-            numColumns={numColumns}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>No spaces yet</Text>
-                <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
+          <View style={styles.composerCard}>
+            <View style={styles.segmented}>
+              <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
+                <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
+                <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.composerRow}>
+              <TextInput
+                style={styles.composerInput}
+                placeholder={actionMode === 'create' ? 'Name your space' : 'Enter invite code'}
+                placeholderTextColor={theme.colors.textMuted}
+                value={actionMode === 'create' ? newVaultName : joinCode}
+                onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
+                onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
+              />
+
+              <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.composerBtn,
+                    actionMode === 'join' && styles.composerBtnJoin,
+                    !isPrimaryEnabled && styles.composerBtnDisabled,
+                  ]}
+                  onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                  disabled={!isPrimaryEnabled}
+                >
+                  {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+
+            {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
+
+            {actionMode === 'create' && (
+              <View style={styles.templateRow}>
+                {templates.map((name) => (
+                  <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
+                    <Text style={styles.templateChipText}>+ {name}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            }
-            ListFooterComponent={
+            )}
+          </View>
+
+          {loading ? (
+            <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 26 }} />
+          ) : (
+            <>
+              {vaults.length > 0 ? (
+                <View style={[styles.gridWrap, isLarge && styles.gridWrapLarge, isTablet && !isLarge && styles.gridWrapTablet]}>
+                  {vaults.map((item) => renderSpace({ item }))}
+                </View>
+              ) : (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>No spaces yet</Text>
+                  <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
+                </View>
+              )}
+
               <View style={styles.footerWrap}>
                 <Text style={styles.footerTitle}>Recent activity</Text>
                 {recentFeed.length ? (
@@ -335,10 +334,10 @@ export default function VaultList({ user, onSelectVault }: { user: any; onSelect
                   <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
                 )}
               </View>
-            }
-          />
-        )}
-      </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
 
       <View style={styles.bottomBar}>
         <Text style={styles.bottomText}>{summary.spaceCount || vaults.length} spaces</Text>
@@ -537,15 +536,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: theme.typography.body,
   },
-  listContent: {
+  scrollContent: {
+    flexGrow: 1,
     paddingBottom: 120,
   },
+  gridWrap: {
+    gap: 10,
+    paddingBottom: 20,
+  },
+  gridWrapTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  gridWrapLarge: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
   cardWrap: {
-    marginBottom: 10,
+    marginBottom: 0,
+    width: '100%',
   },
   cardWrapGrid: {
-    flex: 1,
-    marginHorizontal: 5,
+    width: '48%',
+    flex: 0,
   },
   spaceCard: {
     borderRadius: theme.radius.lg,
