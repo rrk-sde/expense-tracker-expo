@@ -26,6 +26,7 @@ interface Transaction {
   amount: number;
   creatorId: string;
   createdAt: string;
+  items?: { id: string; name: string; price: number }[];
   creator?: {
     id: string;
     name?: string | null;
@@ -169,6 +170,8 @@ export default function LiveTransactionList({
   const [txnTitle, setTxnTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [scannedItems, setScannedItems] = useState<{ name: string; price: number }[]>([]);
+  const [expandedTxnId, setExpandedTxnId] = useState<string | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
   const [confirmVaultAction, setConfirmVaultAction] = useState<'leave' | 'delete' | null>(null);
@@ -295,6 +298,7 @@ export default function LiveTransactionList({
           category: 'General',
           vaultId,
           creatorId: user.id,
+          items: scannedItems && scannedItems.length > 0 ? scannedItems : undefined,
         }),
       });
 
@@ -306,6 +310,7 @@ export default function LiveTransactionList({
 
       setTxnTitle('');
       setAmountStr('');
+      setScannedItems([]);
       setIsModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
       queryClient.invalidateQueries({ queryKey: ['velocity', vaultId, user.id] });
@@ -405,6 +410,7 @@ export default function LiveTransactionList({
 
         if (parsed.title) setTxnTitle(parsed.title);
         if (parsed.amount) setAmountStr(String(parsed.amount));
+        if (parsed.items) setScannedItems(parsed.items);
         setNotice({ type: 'success', message: `AI Scanned: ${parsed.category || 'Receipt'}` });
       }
     } catch (e: any) {
@@ -431,6 +437,7 @@ export default function LiveTransactionList({
 
   const renderItem = useCallback(
     ({ item }: { item: Transaction }) => {
+      const isExpanded = expandedTxnId === item.id;
       const time = new Date(item.createdAt).toLocaleString(undefined, {
         month: 'short',
         day: 'numeric',
@@ -440,28 +447,53 @@ export default function LiveTransactionList({
       const createdBy = item.creator?.name || item.creator?.email || 'Unknown user';
 
       return (
-        <View style={styles.txnCard}>
-          <View style={styles.txnMain}>
-            <Text style={styles.txnTitle}>{item.title}</Text>
-            <Text style={styles.txnMeta}>{time} by {createdBy}</Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setExpandedTxnId(isExpanded ? null : item.id)}
+          style={[styles.txnCard, isExpanded && { paddingBottom: 16 }]}
+        >
+          <View style={{ flexDirection: 'row', width: '100%' }}>
+            <View style={styles.txnMain}>
+              <Text style={styles.txnTitle}>{item.title}</Text>
+              <Text style={styles.txnMeta}>{time} by {createdBy}</Text>
+            </View>
+
+            <View style={styles.txnRight}>
+              <Text style={styles.txnAmount}>₹{Number(item.amount).toFixed(2)}</Text>
+              {item.creatorId === user.id && (
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setConfirmDeleteId(item.id);
+                  }}
+                  disabled={isDeletingId === item.id}
+                >
+                  {isDeletingId === item.id ? (
+                    <ActivityIndicator size="small" color={theme.colors.danger} />
+                  ) : (
+                    <Text style={styles.removeText}>Remove</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
-          <View style={styles.txnRight}>
-            <Text style={styles.txnAmount}>₹{Number(item.amount).toFixed(2)}</Text>
-            {item.creatorId === user.id && (
-              <TouchableOpacity style={styles.removeBtn} onPress={() => setConfirmDeleteId(item.id)} disabled={isDeletingId === item.id}>
-                {isDeletingId === item.id ? (
-                  <ActivityIndicator size="small" color={theme.colors.danger} />
-                ) : (
-                  <Text style={styles.removeText}>Remove</Text>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+          {isExpanded && item.items && item.items.length > 0 && (
+            <View style={styles.itemAccordion}>
+              <View style={styles.itemDivider} />
+              {item.items.map((line, idx) => (
+                <View key={line.id || idx} style={styles.itemRow}>
+                  <Text style={styles.itemName}>{line.name}</Text>
+                  <Text style={styles.itemPrice}>₹{Number(line.price).toFixed(2)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </TouchableOpacity>
       );
     },
-    [isDeletingId]
+    [isDeletingId, expandedTxnId, user.id]
   );
 
   if (isLoading) {
@@ -606,6 +638,24 @@ export default function LiveTransactionList({
               onChangeText={setAmountStr}
               onSubmitEditing={handleSubmit}
             />
+
+            {scannedItems.length > 0 && (
+              <View style={{ marginTop: 12, backgroundColor: '#F8FBF9', padding: 10, borderRadius: 8 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.textSecondary, marginBottom: 4 }}>
+                  {scannedItems.length} items detected:
+                </Text>
+                {scannedItems.slice(0, 3).map((item, i) => (
+                  <Text key={i} style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                    • {item.name}: ₹{item.price.toFixed(2)}
+                  </Text>
+                ))}
+                {scannedItems.length > 3 && (
+                  <Text style={{ fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' }}>
+                    + {scannedItems.length - 3} more...
+                  </Text>
+                )}
+              </View>
+            )}
 
             <View style={styles.modalActionRow}>
               <TouchableOpacity style={styles.modalCancelBtn} onPress={handleScanReceipt} disabled={isSubmitting}>
@@ -1515,5 +1565,32 @@ const styles = StyleSheet.create({
   dayTextSelected: {
     color: theme.colors.brandStrong,
     fontWeight: '800',
+  },
+  itemAccordion: {
+    marginTop: 12,
+    width: '100%',
+  },
+  itemDivider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginBottom: 8,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  itemName: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    fontFamily: theme.typography.body,
+    flex: 1,
+  },
+  itemPrice: {
+    fontSize: 14,
+    color: theme.colors.textPrimary,
+    fontFamily: theme.typography.body,
+    fontWeight: '600',
+    marginLeft: 12,
   },
 });
