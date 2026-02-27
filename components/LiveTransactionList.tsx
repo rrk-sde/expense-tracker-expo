@@ -44,7 +44,7 @@ interface TransactionPage {
   totalCount: number;
 }
 
-const API_BASE_URL = 'https://expense-tracker-prisma.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
 const PAGE_SIZE = 30;
 
 const monthOptions = [

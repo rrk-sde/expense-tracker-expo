@@ -15,7 +15,7 @@ import {
 
 import { shadows, theme } from '../theme';
 
-const API_BASE_URL = 'https://expense-tracker-prisma.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
