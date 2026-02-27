@@ -223,7 +223,7 @@ export default function VaultList({
     const initials = item.name?.trim()?.charAt(0)?.toUpperCase() || 'S';
 
     return (
-      <View style={[styles.cardWrap, numColumns > 1 && styles.cardWrapGrid]}>
+      <View style={[styles.cardWrap, numColumns === 2 && styles.cardWrapGrid2, numColumns === 3 && styles.cardWrapGrid3]}>
         <TouchableOpacity style={styles.spaceCard} onPress={() => onSelectVault(item.id)}>
           <View style={styles.spaceTop}>
             <View style={styles.spaceAvatar}>

@@ -408,6 +408,14 @@ export default function LiveTransactionList({
         const parsed = await parsePayload(res);
         if (!res.ok) throw new Error(parsed?.error || 'AI scan failed');
 
+        if (parsed.isReceipt === false) {
+          setTxnTitle('');
+          setAmountStr('');
+          setScannedItems([]);
+          setNotice({ type: 'error', message: 'This is not a receipt or invoice' });
+          return;
+        }
+
         if (parsed.title) setTxnTitle(parsed.title);
         if (parsed.amount) setAmountStr(String(parsed.amount));
         if (parsed.items) setScannedItems(parsed.items);
@@ -645,7 +653,7 @@ export default function LiveTransactionList({
                   {scannedItems.length} items detected:
                 </Text>
                 {scannedItems.slice(0, 3).map((item, i) => (
-                  <Text key={i} style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                  <Text key={`${item.name}-${i}`} style={{ fontSize: 12, color: theme.colors.textMuted }}>
                     • {item.name}: ₹{item.price.toFixed(2)}
                   </Text>
                 ))}
@@ -1140,11 +1148,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: 14,
+    marginBottom: 10,
+    flexDirection: 'column',
     ...shadows.card,
   },
   txnMain: {
@@ -1585,6 +1591,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontFamily: theme.typography.body,
     flex: 1,
+    paddingRight: 8,
   },
   itemPrice: {
     fontSize: 14,
