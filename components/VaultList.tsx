@@ -22,6 +22,7 @@ type Space = {
   id: string;
   name: string;
   memberCount?: number;
+  totalAmount?: number;
 };
 
 type Summary = {
@@ -50,6 +51,8 @@ export default function VaultList({
   const isLarge = width >= 1200;
   const isTablet = width >= 760;
   const numColumns = isLarge ? 3 : isTablet ? 2 : 1;
+  const CONTENT_MAX_WIDTH = 800;
+  const bottomPadH = width > CONTENT_MAX_WIDTH ? (width - CONTENT_MAX_WIDTH) / 2 : 12;
 
   const [vaults, setVaults] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +64,8 @@ export default function VaultList({
   const [actionMode, setActionMode] = useState<'create' | 'join'>('create');
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [recentFeed, setRecentFeed] = useState<FeedItem[]>([]);
+  const [feedExpanded, setFeedExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [membersModalVisible, setMembersModalVisible] = useState(false);
   const [membersData, setMembersData] = useState<any[]>([]);
@@ -78,7 +83,14 @@ export default function VaultList({
   const addFeed = (text: string) => {
     const now = new Date();
     const time = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    setRecentFeed((prev) => [{ id: String(Date.now()), text, time }, ...prev].slice(0, 5));
+    const newItem = { id: String(Date.now() + Math.random()), text, time };
+    setRecentFeed((prev) => {
+      const next = [newItem, ...prev].slice(0, 30);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
+      }
+      return next;
+    });
   };
 
   const loadVaults = async () => {
@@ -121,6 +133,16 @@ export default function VaultList({
 
   useEffect(() => {
     loadVaults();
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = window.localStorage.getItem(`recent_feed_${user.id}`);
+      if (saved) {
+        try {
+          setRecentFeed(JSON.parse(saved));
+        } catch (e) {
+          console.error('Failed to load feed', e);
+        }
+      }
+    }
   }, [user.id]);
 
   useEffect(() => {
@@ -236,17 +258,24 @@ export default function VaultList({
           </View>
 
           <View style={styles.spaceMetaRow}>
-            <TouchableOpacity
-              style={styles.spaceChip}
-              onPress={(e) => {
-                e.stopPropagation();
-                loadVaultMembers(item.id, item.name);
-              }}
-            >
-              <Text style={styles.spaceChipText}>Members {item.memberCount || 1}</Text>
-            </TouchableOpacity>
-            <View style={styles.spaceChip}>
-              <Text style={styles.spaceChipText}>Live tracking</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 }}>
+              <TouchableOpacity
+                style={styles.spaceChip}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  loadVaultMembers(item.id, item.name);
+                }}
+              >
+                <Text style={styles.spaceChipText}>Members {item.memberCount || 1}</Text>
+              </TouchableOpacity>
+              <View style={styles.spaceChip}>
+                <Text style={styles.spaceChipText}>Live</Text>
+              </View>
+            </View>
+            <View style={[styles.spaceChip, { backgroundColor: '#FDF1F0', borderColor: '#FEE2E2' }]}>
+              <Text style={[styles.spaceChipText, { color: '#B91C1C', fontWeight: '800' }]}>
+                ₹{Number(item.totalAmount || 0).toLocaleString()}
+              </Text>
             </View>
           </View>
 
@@ -258,6 +287,7 @@ export default function VaultList({
               if (clipboard?.writeText) {
                 await clipboard.writeText(inviteCode);
                 setFeedback({ type: 'success', message: 'Invite code copied.' });
+                addFeed(`Copied code: ${inviteCode} (${item.name})`);
               } else {
                 setFeedback({ type: 'error', message: `Copy unavailable. Share: ${inviteCode}` });
               }
@@ -296,93 +326,182 @@ export default function VaultList({
             </View>
           </View>
 
-          <View style={styles.composerCard}>
-            <View style={styles.segmented}>
-              <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
-                <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
-                <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.composerRow}>
-              <TextInput
-                style={styles.composerInput}
-                placeholder={actionMode === 'create' ? 'Name your space' : 'Enter invite code'}
-                placeholderTextColor={theme.colors.textMuted}
-                value={actionMode === 'create' ? newVaultName : joinCode}
-                onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
-                onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
-              />
-
-              <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
-                <TouchableOpacity
-                  style={[
-                    styles.composerBtn,
-                    actionMode === 'join' && styles.composerBtnJoin,
-                    !isPrimaryEnabled && styles.composerBtnDisabled,
-                  ]}
-                  onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                  disabled={!isPrimaryEnabled}
-                >
-                  {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-
-            {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
-
-            {actionMode === 'create' && (
-              <View style={styles.templateRow}>
-                {templates.map((name) => (
-                  <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
-                    <Text style={styles.templateChipText}>+ {name}</Text>
+          <View style={isLarge ? styles.desktopRow : styles.mobileColumn}>
+            <View style={isLarge ? styles.mainContent : styles.fullWidth}>
+              <View style={styles.composerCard}>
+                <View style={styles.segmented}>
+                  <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
+                    <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-
-          {loading ? (
-            <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 26 }} />
-          ) : (
-            <>
-              {vaults.length > 0 ? (
-                <View style={[styles.gridWrap, isLarge && styles.gridWrapLarge, isTablet && !isLarge && styles.gridWrapTablet]}>
-                  {vaults.map((item) => renderSpace({ item }))}
+                  <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
+                    <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <View style={styles.emptyWrap}>
-                  <Text style={styles.emptyTitle}>No spaces yet</Text>
-                  <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
+
+                <View style={styles.composerBody}>
+                  <Text style={styles.composerLabel}>
+                    {actionMode === 'create' ? 'Space Name' : 'Invite Code'}
+                  </Text>
+                  <View style={styles.composerRow}>
+                    <TextInput
+                      style={styles.composerInput}
+                      placeholder={actionMode === 'create' ? 'e.g. Goa Trip 2024' : 'XXXX-XXXX'}
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={actionMode === 'create' ? newVaultName : joinCode}
+                      onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
+                      onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                      autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
+                    />
+
+                    <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
+                      <TouchableOpacity
+                        style={[
+                          styles.composerBtn,
+                          actionMode === 'join' && styles.composerBtnJoin,
+                          !isPrimaryEnabled && styles.composerBtnDisabled,
+                        ]}
+                        onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                        disabled={!isPrimaryEnabled}
+                      >
+                        {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
+                  </View>
+                </View>
+
+                {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
+
+                {actionMode === 'create' && (
+                  <View style={styles.templateRow}>
+                    {templates.map((name) => (
+                      <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
+                        <Text style={styles.templateChipText}>+ {name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {!isLarge && (
+                <View style={[styles.footerWrap, { marginBottom: 12 }]}>
+                  <Text style={styles.footerTitle}>Recent activity</Text>
+                  {recentFeed.length ? (
+                    <>
+                      {(feedExpanded ? recentFeed : recentFeed.slice(0, 3)).map((item) => (
+                        <View key={item.id} style={styles.feedRow}>
+                          <Text style={styles.feedText}>{item.text}</Text>
+                          <Text style={styles.feedTime}>{item.time}</Text>
+                        </View>
+                      ))}
+                      {recentFeed.length > 3 && (
+                        <TouchableOpacity style={styles.showMoreBtn} onPress={() => setFeedExpanded(!feedExpanded)}>
+                          <Text style={styles.showMoreText}>
+                            {feedExpanded ? 'show less' : `+ show more (${recentFeed.length - 3})`}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
+                  )}
                 </View>
               )}
 
-              <View style={styles.footerWrap}>
-                <Text style={styles.footerTitle}>Recent activity</Text>
-                {recentFeed.length ? (
-                  recentFeed.map((item) => (
-                    <View key={item.id} style={styles.feedRow}>
-                      <Text style={styles.feedText}>{item.text}</Text>
-                      <Text style={styles.feedTime}>{item.time}</Text>
-                    </View>
-                  ))
+              <View style={styles.gridContainer}>
+                {loading && vaults.length === 0 ? (
+                  <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 40 }} />
                 ) : (
-                  <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
+                  <>
+                    {loading && vaults.length > 0 && (
+                      <View style={styles.refreshIndicator}>
+                        <ActivityIndicator size="small" color={theme.colors.brand} />
+                        <Text style={styles.refreshText}>Updating spaces...</Text>
+                      </View>
+                    )}
+
+                    {vaults.length > 0 && (
+                      <View style={styles.searchBarWrap}>
+                        <TextInput
+                          style={styles.searchInput}
+                          placeholder="Search spaces by name or code..."
+                          placeholderTextColor={theme.colors.textMuted}
+                          value={searchQuery}
+                          onChangeText={setSearchQuery}
+                          autoCapitalize="none"
+                        />
+                      </View>
+                    )}
+
+                    {(() => {
+                      const filtered = vaults.filter(v =>
+                        v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        String(v.id).slice(0, 8).toUpperCase().includes(searchQuery.toUpperCase())
+                      );
+
+                      if (vaults.length === 0) {
+                        return (
+                          <View style={styles.emptyWrap}>
+                            <Text style={styles.emptyTitle}>No spaces yet</Text>
+                            <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
+                          </View>
+                        );
+                      }
+
+                      if (filtered.length === 0) {
+                        return (
+                          <View style={styles.emptyWrap}>
+                            <Text style={styles.emptyTitle}>No matches found</Text>
+                            <Text style={styles.emptyText}>Try searching for something else or clear the search.</Text>
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <View style={styles.gridWrap}>
+                          {filtered.map((item) => renderSpace({ item }))}
+                        </View>
+                      );
+                    })()}
+                  </>
                 )}
               </View>
-            </>
-          )}
+
+              {isLarge && (
+                <View style={styles.sidebar}>
+                  <View style={[styles.footerWrap, { marginTop: 0, flex: 1 }]}>
+                    <Text style={styles.footerTitle}>Recent activity</Text>
+                    {recentFeed.length ? (
+                      <>
+                        {(feedExpanded ? recentFeed : recentFeed.slice(0, 3)).map((item) => (
+                          <View key={item.id} style={styles.feedRow}>
+                            <Text style={styles.feedText}>{item.text}</Text>
+                            <Text style={styles.feedTime}>{item.time}</Text>
+                          </View>
+                        ))}
+                        {recentFeed.length > 3 && (
+                          <TouchableOpacity style={styles.showMoreBtn} onPress={() => setFeedExpanded(!feedExpanded)}>
+                            <Text style={styles.showMoreText}>
+                              {feedExpanded ? 'show less' : `+ show more (${recentFeed.length - 3})`}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
         </View>
       </ScrollView>
 
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { left: bottomPadH, right: bottomPadH }]}>
         <Text style={styles.bottomText}>{summary.spaceCount || vaults.length} spaces</Text>
         <Text style={styles.bottomDot}>•</Text>
         <Text style={styles.bottomText}>₹{Number(summary.totalAmount7d || 0).toFixed(0)} this week</Text>
@@ -516,6 +635,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     ...shadows.card,
   },
+  composerBody: {
+    marginTop: 16,
+  },
+  composerLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.textSecondary,
+    marginBottom: 8,
+    fontFamily: theme.typography.body,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   segmented: {
     flexDirection: 'row',
     backgroundColor: theme.colors.surfaceAlt,
@@ -626,29 +757,21 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   gridWrap: {
-    gap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
     paddingBottom: 20,
     width: '100%',
-  },
-  gridWrapTablet: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  gridWrapLarge: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
   },
   cardWrap: {
     marginBottom: 0,
     width: '100%',
   },
   cardWrapGrid2: {
-    width: '48%',
-    flex: 0,
+    width: '48.5%',
   },
   cardWrapGrid3: {
     width: '32%',
-    flex: 0,
   },
   spaceCard: {
     borderRadius: theme.radius.lg,
@@ -697,6 +820,8 @@ const styles = StyleSheet.create({
   spaceMetaRow: {
     marginTop: 10,
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 6,
   },
   spaceChip: {
@@ -764,6 +889,17 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontFamily: theme.typography.body,
   },
+  showMoreBtn: {
+    paddingVertical: 10,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  showMoreText: {
+    color: theme.colors.brand,
+    fontWeight: '700',
+    fontSize: 13,
+    fontFamily: theme.typography.body,
+  },
   feedRow: {
     paddingVertical: 6,
     flexDirection: 'row',
@@ -804,6 +940,48 @@ const styles = StyleSheet.create({
     color: '#80B99E',
     fontSize: 12,
   },
+  desktopRow: {
+    flexDirection: 'row',
+    gap: 24,
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  mobileColumn: {
+    flexDirection: 'column',
+    width: '100%',
+  },
+  mainContent: {
+    flex: 3,
+  },
+  sidebar: {
+    flex: 1,
+    minWidth: 300,
+  },
+  fullWidth: {
+    width: '100%',
+  },
+  gridContainer: {
+    width: '100%',
+    marginTop: 12,
+  },
+  refreshIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F0F6F2',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: '#D2E1D6',
+  },
+  refreshText: {
+    fontSize: 12,
+    color: theme.colors.brandStrong,
+    fontWeight: '700',
+    fontFamily: theme.typography.body,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -822,6 +1000,20 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontFamily: theme.typography.display,
     marginBottom: 16,
+  },
+  searchBarWrap: {
+    marginBottom: 16,
+  },
+  searchInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    fontFamily: theme.typography.body,
+    ...shadows.card,
   },
   membersList: {
     maxHeight: 300,

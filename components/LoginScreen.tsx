@@ -154,13 +154,47 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
     }
   };
 
+  const handleGoogleLogin = async () => {
+    Keyboard.dismiss();
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'google_user@example.com',
+          name: 'Google User',
+          providerId: 'google_demo_oauth',
+        }),
+      });
+
+      const raw = await res.text();
+      let payload: any = {};
+      try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { error: raw || 'Invalid response' }; }
+
+      if (!res.ok) throw new Error(payload?.error || 'Google login failed');
+      onLogin(payload);
+    } catch (e: any) {
+      setMessage({ type: 'error', text: e.message || 'Could not connect. Is the server running?' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const form = (
     <Animated.View style={[styles.formShell, { opacity, transform: [{ translateY: translate }] }]}>
       <View style={styles.modeRow}>
-        <TouchableOpacity style={[styles.modeBtn, mode === 'signin' && styles.modeBtnActive]} onPress={() => setMode('signin')}>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'signin' && styles.modeBtnActive]}
+          onPress={() => setMode('signin')}
+        >
           <Text style={[styles.modeBtnText, mode === 'signin' && styles.modeBtnTextActive]}>Sign in</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.modeBtn, mode === 'signup' && styles.modeBtnActive]} onPress={() => setMode('signup')}>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'signup' && styles.modeBtnActive]}
+          onPress={() => setMode('signup')}
+        >
           <Text style={[styles.modeBtnText, mode === 'signup' && styles.modeBtnTextActive]}>Sign up</Text>
         </TouchableOpacity>
       </View>
@@ -240,9 +274,32 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
       </TouchableOpacity>
 
       {mode === 'signin' && (
-        <TouchableOpacity style={styles.secondaryBtn} onPress={handleGuestLogin} disabled={loading}>
-          <Text style={styles.secondaryBtnText}>Continue as guest</Text>
-        </TouchableOpacity>
+        <>
+          {/* Google OAuth — re-enable once Client ID is configured
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={styles.oauthBtn} onPress={handleGoogleLogin} disabled={loading}>
+            <View style={styles.oauthIconPlaceholder}>
+              <View style={[styles.oauthIconCircle, { backgroundColor: '#4285F4' }]} />
+            </View>
+            <Text style={styles.oauthBtnText}>Continue with Google</Text>
+          </TouchableOpacity>
+          */}
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={styles.secondaryBtn} onPress={handleGuestLogin} disabled={loading}>
+            <Text style={styles.secondaryBtnText}>Continue as guest</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       {mode === 'forgot' ? (
@@ -481,6 +538,49 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
     fontFamily: theme.typography.body,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.colors.border,
+    opacity: 0.6,
+  },
+  dividerText: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  oauthBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  oauthBtnText: {
+    color: '#374151',
+    fontWeight: '700',
+    fontSize: 14,
+    fontFamily: theme.typography.body,
+  },
+  oauthIconPlaceholder: {
+    marginRight: 10,
+  },
+  oauthIconCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
   },
   linkBtn: {
     alignItems: 'center',

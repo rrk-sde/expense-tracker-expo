@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -24,9 +24,11 @@ interface Transaction {
   id: string;
   title: string;
   amount: number;
+  type?: string;
   creatorId: string;
   createdAt: string;
-  items?: { id: string; name: string; price: number }[];
+  items?: { name: string; price: number }[];
+  splitWith?: string[];
   creator?: {
     id: string;
     name?: string | null;
@@ -70,7 +72,11 @@ const calendarMonthOptions = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', '
 const parsePayload = async (res: Response) => {
   const raw = await res.text();
   try {
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed.error && typeof parsed.error === 'object') {
+      return { error: parsed.error.message || JSON.stringify(parsed.error) };
+    }
+    return parsed;
   } catch {
     if (raw.trim().startsWith('<')) {
       if (res.status === 413) return { error: 'Image too large. Try a smaller photo.' };
@@ -155,6 +161,54 @@ const fetchVelocity = async (vaultId: string, userId: string) => {
   return payload as VelocityData;
 };
 
+const MarkdownText = ({ content, theme, textStyle }: { content: string; theme: any; textStyle?: any }) => {
+  if (!content) return null;
+  const lines = content.split('\n');
+  return (
+    <View style={{ gap: 12 }}>
+      {lines.map((line, idx) => {
+        let trimmed = line.trim();
+        if (!trimmed) return <View key={idx} style={{ height: 2 }} />;
+
+        let isBullet = false;
+        if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+          isBullet = true;
+          trimmed = trimmed.substring(2);
+        }
+
+        // Match bold parts
+        const parts = trimmed.split(/(\*\*.*?\*\*)/g);
+        return (
+          <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+            {isBullet && <Text style={{ color: theme.colors.brand, marginRight: 8, fontSize: 18, fontWeight: '900' }}>•</Text>}
+            <Text style={[
+              {
+                flex: 1,
+                fontSize: 15,
+                lineHeight: 24,
+                color: theme.colors.textPrimary,
+                fontFamily: theme.typography.body
+              },
+              textStyle
+            ]}>
+              {parts.map((part, pidx) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return (
+                    <Text key={pidx} style={{ fontWeight: '800', color: textStyle?.color || theme.colors.brand }}>
+                      {part.slice(2, -2)}
+                    </Text>
+                  );
+                }
+                return part;
+              })}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+};
+
 export default function LiveTransactionList({
   vaultId,
   user,
@@ -164,14 +218,31 @@ export default function LiveTransactionList({
   user: any;
   onBack: () => void;
 }>) {
+  const addFeed = (text: string) => {
+    const now = new Date();
+    const time = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const newItem = { id: String(Date.now() + Math.random()), text, time };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = window.localStorage.getItem(`recent_feed_${user.id}`);
+      let feed = [];
+      try {
+        feed = saved ? JSON.parse(saved) : [];
+      } catch (e) { }
+      const next = [newItem, ...feed].slice(0, 10);
+      window.localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
+    }
+  };
   const queryClient = useQueryClient();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1000;
+  const CONTENT_MAX_WIDTH = 760;
+  const fabPadH = width > CONTENT_MAX_WIDTH ? (width - CONTENT_MAX_WIDTH) / 2 : 20;
 
   const [activeUsers, setActiveUsers] = useState<number>(1);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [txnTitle, setTxnTitle] = useState('');
+  const [txnType, setTxnType] = useState<'DR' | 'CR'>('DR');
   const [amountStr, setAmountStr] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scannedItems, setScannedItems] = useState<{ name: string; price: number }[]>([]);
@@ -194,6 +265,125 @@ export default function LiveTransactionList({
   const [pickerTarget, setPickerTarget] = useState<'from' | 'to'>('from');
   const [pickerMonth, setPickerMonth] = useState(new Date());
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+
+  const [isInsightModalVisible, setIsInsightModalVisible] = useState(false);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [aiInsights, setAiInsights] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'insights' | 'forecast' | 'chat'>('insights');
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastData, setForecastData] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatScrollRef = useRef<ScrollView>(null);
+
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || isChatLoading) return;
+    const userMsg = { role: 'user' as const, text: chatInput.trim() };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatInput('');
+    setIsChatLoading(true);
+    try {
+      const history = chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text }));
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, message: userMsg.text, history })
+      });
+      const data = await parsePayload(res);
+      const aiMsg = { role: 'ai' as const, text: data?.reply || 'Sorry, I could not answer that.' };
+      setChatMessages(prev => [...prev, aiMsg]);
+      setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (e: any) {
+      setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const [quickAddText, setQuickAddText] = useState('');
+  const [isParsingText, setIsParsingText] = useState(false);
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!isModalVisible) {
+      setSelectedMembers([]);
+    }
+  }, [isModalVisible]);
+
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/members?userId=${user.id}`);
+        const data = await parsePayload(res);
+        if (res.ok) setMembers(data);
+      } catch (e) { }
+    };
+    if (vaultId) fetchMembers();
+  }, [vaultId, user.id]);
+
+  const handleQuickAdd = async () => {
+    if (!quickAddText.trim() || isParsingText) return;
+    setIsParsingText(true);
+    setNotice(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/gemini/parse-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: quickAddText }),
+      });
+      const data = await parsePayload(res);
+      if (!res.ok) throw new Error(data?.error || 'Failed to parse text');
+
+      setTxnTitle(data.title || '');
+      setAmountStr(String(data.amount || ''));
+      setTxnType(data.type === 'CR' ? 'CR' : 'DR');
+      setQuickAddText('');
+      setIsModalVisible(true);
+      setNotice({ type: 'success', message: 'AI parsed your request!' });
+    } catch (e: any) {
+      setNotice({ type: 'error', message: e.message });
+    } finally {
+      setIsParsingText(false);
+    }
+  };
+
+  const fetchAIInsights = async () => {
+    setInsightLoading(true);
+    setIsInsightModalVisible(true);
+    setActiveTab('insights');
+    setAiInsights(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/ai-insights?userId=${user.id}`);
+      const data = await parsePayload(res);
+      if (!res.ok) throw new Error(data?.error || 'Failed to fetch insights');
+      setAiInsights(data.insights);
+    } catch (e: any) {
+      setAiInsights(`Error: ${e.message}`);
+    } finally {
+      setInsightLoading(false);
+    }
+  };
+
+  const fetchForecast = async () => {
+    setForecastLoading(true);
+    setActiveTab('forecast');
+    setForecastData(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/forecast?userId=${user.id}`);
+      const data = await parsePayload(res);
+      if (!res.ok) {
+        // Assuming the server returns an error message like "Add at least 3 transactions..."
+        throw new Error(data?.error || 'Failed to fetch forecast');
+      }
+      setForecastData(data.forecast);
+    } catch (e: any) {
+      setForecastData(`Error: ${e.message}`);
+    } finally {
+      setForecastLoading(false);
+    }
+  };
 
   const canSubmit = Boolean(txnTitle.trim()) && Boolean(amountStr.trim()) && !isSubmitting;
   const calendarDays = useMemo(() => buildCalendarDays(pickerMonth), [pickerMonth]);
@@ -302,7 +492,9 @@ export default function LiveTransactionList({
           category: 'General',
           vaultId,
           creatorId: user.id,
+          type: txnType,
           items: scannedItems && scannedItems.length > 0 ? scannedItems : undefined,
+          splitWith: selectedMembers && selectedMembers.length > 0 ? selectedMembers : undefined,
         }),
       });
 
@@ -312,7 +504,8 @@ export default function LiveTransactionList({
         return;
       }
 
-      setTxnTitle('');
+      addFeed(`Added expense: ${txnTitle} (₹${amountStr})`);
+      setTxnTitle('DR ');
       setAmountStr('');
       setScannedItems([]);
       setIsModalVisible(false);
@@ -340,6 +533,9 @@ export default function LiveTransactionList({
         return;
       }
 
+      const title = (payload as any)?.title || 'Transaction';
+      const amount = (payload as any)?.amount || '0';
+      addFeed(`Removed: ${title} (₹${amount})`);
       setNotice({ type: 'success', message: 'Transaction removed' });
       queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
       queryClient.invalidateQueries({ queryKey: ['velocity', vaultId, user.id] });
@@ -414,6 +610,7 @@ export default function LiveTransactionList({
 
         if (parsed.isReceipt === false) {
           setTxnTitle('');
+          setTxnType('DR');
           setAmountStr('');
           setScannedItems([]);
           setNotice({ type: 'error', message: 'This is not a receipt or invoice' });
@@ -456,7 +653,7 @@ export default function LiveTransactionList({
         hour: 'numeric',
         minute: '2-digit',
       });
-      const createdBy = item.creator?.name || item.creator?.email || 'Unknown user';
+      const createdBy = item.creatorId === user.id ? 'You' : (item.creator?.name || item.creator?.email || 'Unknown user');
 
       return (
         <TouchableOpacity
@@ -466,12 +663,31 @@ export default function LiveTransactionList({
         >
           <View style={{ flexDirection: 'row', width: '100%' }}>
             <View style={styles.txnMain}>
-              <Text style={styles.txnTitle}>{item.title}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={[styles.typeBadge, item.type === 'CR' ? styles.typeBadgeCr : styles.typeBadgeDr]}>
+                  <Text style={[styles.typeBadgeText, { color: item.type === 'CR' ? '#166534' : '#991B1B' }]}>
+                    {item.type === 'CR' ? '↑ Income' : '↓ Spent'}
+                  </Text>
+                </View>
+                <Text style={styles.txnTitle}>{item.title}</Text>
+                {item.splitWith && item.splitWith.length > 0 && (
+                  <View style={{ backgroundColor: '#DBEAFE', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, color: '#1E40AF', fontWeight: '800' }}>SPLIT</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.txnMeta}>{time} by {createdBy}</Text>
             </View>
 
             <View style={styles.txnRight}>
               <Text style={styles.txnAmount}>₹{Number(item.amount).toFixed(2)}</Text>
+              {item.splitWith && item.splitWith.length > 0 && (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 11, color: theme.colors.brandStrong, fontWeight: '700', marginTop: 2 }}>
+                    Split: ₹{(Number(item.amount) / (item.splitWith.length + 1)).toFixed(2)} each
+                  </Text>
+                </View>
+              )}
               {item.creatorId === user.id && (
                 <TouchableOpacity
                   style={styles.removeBtn}
@@ -495,7 +711,7 @@ export default function LiveTransactionList({
             <View style={styles.itemAccordion}>
               <View style={styles.itemDivider} />
               {item.items.map((line, idx) => (
-                <View key={line.id || idx} style={styles.itemRow}>
+                <View key={line.name || idx} style={styles.itemRow}>
                   <Text style={styles.itemName}>{line.name}</Text>
                   <Text style={styles.itemPrice}>₹{Number(line.price).toFixed(2)}</Text>
                 </View>
@@ -508,13 +724,6 @@ export default function LiveTransactionList({
     [isDeletingId, expandedTxnId, user.id]
   );
 
-  if (isLoading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={theme.colors.brand} />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.screen}>
@@ -526,7 +735,7 @@ export default function LiveTransactionList({
 
           <View style={styles.topActions}>
             {isDesktop && (
-              <TouchableOpacity style={styles.addBtnDesktop} onPress={() => setIsModalVisible(true)}>
+              <TouchableOpacity style={styles.addBtnDesktop} onPress={() => { setTxnTitle(''); setTxnType('DR'); setIsModalVisible(true); }}>
                 <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
               </TouchableOpacity>
             )}
@@ -543,50 +752,86 @@ export default function LiveTransactionList({
           </View>
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
-          <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
-          <Text style={styles.heroSubtitle}>
-            Filter by month, year, and date range while keeping real-time updates from your team.
-          </Text>
-          <View style={styles.heroStats}>
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{totalCount}</Text>
-              <Text style={styles.heroStatLabel}>Total results</Text>
-            </View>
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
-              <Text style={styles.heroStatLabel}>7-day spend</Text>
-            </View>
-            <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
-              <Text style={styles.heroStatLabel}>7-day count</Text>
-            </View>
+        {(isLoading && transactions.length === 0) ? (
+          <View style={[styles.loader, { flex: 1, marginTop: 100 }]}>
+            <ActivityIndicator size="large" color={theme.colors.brand} />
+            <Text style={{ marginTop: 16, color: theme.colors.textMuted, fontFamily: theme.typography.body }}>
+              Loading space activity...
+            </Text>
           </View>
-        </View>
+        ) : (
+          <>
+            <View style={styles.heroCard}>
+              <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
+              <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
+              <Text style={styles.heroSubtitle}>
+                Filter by month, year, and date range while keeping real-time updates from your team.
+              </Text>
+              <View style={styles.heroStats}>
+                <View style={styles.heroStatItem}>
+                  <Text style={styles.heroStatValue}>{totalCount}</Text>
+                  <Text style={styles.heroStatLabel}>Total results</Text>
+                </View>
+                <View style={styles.heroStatItem}>
+                  <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
+                  <Text style={styles.heroStatLabel}>7-day spend</Text>
+                </View>
+                <View style={styles.heroStatItem}>
+                  <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
+                  <Text style={styles.heroStatLabel}>7-day count</Text>
+                </View>
+              </View>
 
-        <View style={styles.filterCard}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search expenses"
-            placeholderTextColor={theme.colors.textMuted}
-            value={searchInput}
-            onChangeText={setSearchInput}
-          />
+              <TouchableOpacity style={styles.aiInsightsBtn} onPress={fetchAIInsights}>
+                <Text style={styles.aiInsightsText}>✨ AI Spending Insights</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.filterMetaRow}>
-            <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setFilterSheetVisible(true)}>
-              <Text style={styles.filterOpenBtnText}>Filters</Text>
-            </TouchableOpacity>
-            <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
-            {(appliedFromDate || appliedToDate) && (
-              <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
-            )}
-          </View>
-        </View>
+            <View style={styles.quickAddCard}>
+              <View style={styles.quickAddInputWrap}>
+                <TextInput
+                  style={styles.quickAddInput}
+                  placeholder='e.g. "₹250 for travel via Uber"'
+                  placeholderTextColor={theme.colors.textMuted}
+                  value={quickAddText}
+                  onChangeText={setQuickAddText}
+                  onSubmitEditing={handleQuickAdd}
+                />
+                <TouchableOpacity
+                  style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
+                  onPress={handleQuickAdd}
+                  disabled={isParsingText}
+                >
+                  {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+            </View>
 
-        {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
-        {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
+            <View style={styles.filterCard}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search expenses"
+                placeholderTextColor={theme.colors.textMuted}
+                value={searchInput}
+                onChangeText={setSearchInput}
+              />
+
+              <View style={styles.filterMetaRow}>
+                <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setFilterSheetVisible(true)}>
+                  <Text style={styles.filterOpenBtnText}>Filters</Text>
+                </TouchableOpacity>
+                <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
+                {(appliedFromDate || appliedToDate) && (
+                  <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
+                )}
+              </View>
+            </View>
+
+            {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
+            {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
+          </>
+        )}
 
         <FlatList
           data={transactions}
@@ -619,13 +864,11 @@ export default function LiveTransactionList({
           }
         />
 
-        {!isDesktop && (
-          <View style={styles.fabWrap}>
-            <TouchableOpacity style={styles.fabBtn} onPress={() => setIsModalVisible(true)}>
-              <Text style={styles.fabBtnText}>+ Add expense</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <View style={[styles.fabWrap, { left: fabPadH, right: fabPadH }]}>
+          <TouchableOpacity style={styles.fabBtn} onPress={() => { setTxnTitle(''); setTxnType('DR'); setIsModalVisible(true); }}>
+            <Text style={styles.fabBtnText}>+ Add expense</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal visible={isModalVisible} transparent animationType="slide">
@@ -633,13 +876,20 @@ export default function LiveTransactionList({
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Add transaction</Text>
 
-            <TextInput
-              style={styles.modalInput}
-              placeholder="What did you buy?"
-              placeholderTextColor={theme.colors.textMuted}
-              value={txnTitle}
-              onChangeText={setTxnTitle}
-            />
+            <View style={styles.typeToggleRow}>
+              <TouchableOpacity
+                style={[styles.typeToggle, txnType === 'DR' && styles.typeToggleActiveDr]}
+                onPress={() => setTxnType('DR')}
+              >
+                <Text style={[styles.typeToggleText, txnType === 'DR' && styles.typeToggleTextActive]}>↓ Spent</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.typeToggle, txnType === 'CR' && styles.typeToggleActiveCr]}
+                onPress={() => setTxnType('CR')}
+              >
+                <Text style={[styles.typeToggleText, txnType === 'CR' && styles.typeToggleTextActive]}>↑ Income</Text>
+              </TouchableOpacity>
+            </View>
 
             <TextInput
               style={styles.modalInput}
@@ -648,30 +898,67 @@ export default function LiveTransactionList({
               keyboardType="numeric"
               value={amountStr}
               onChangeText={setAmountStr}
+              autoFocus={true}
+            />
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="What did you buy?"
+              placeholderTextColor={theme.colors.textMuted}
+              value={txnTitle}
+              onChangeText={setTxnTitle}
               onSubmitEditing={handleSubmit}
             />
 
             {scannedItems.length > 0 && (
-              <View style={{ marginTop: 12, backgroundColor: '#F8FBF9', padding: 10, borderRadius: 8 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.textSecondary, marginBottom: 4 }}>
-                  {scannedItems.length} items detected:
+              <View style={{ marginTop: 20, backgroundColor: '#F8FBF9', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E8F0E9' }}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 10 }}>
+                  ✨ AI Line Items:
                 </Text>
-                {scannedItems.slice(0, 3).map((item, i) => (
-                  <Text key={`${item.name}-${i}`} style={{ fontSize: 12, color: theme.colors.textMuted }}>
-                    • {item.name}: ₹{item.price.toFixed(2)}
-                  </Text>
+                {scannedItems.map((item, i) => (
+                  <View key={`scanned-${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>• {item.name}</Text>
+                    <Text style={{ fontSize: 13, color: theme.colors.brand, fontWeight: '700' }}>₹{item.price.toFixed(0)}</Text>
+                  </View>
                 ))}
-                {scannedItems.length > 3 && (
-                  <Text style={{ fontSize: 12, color: theme.colors.textMuted, fontStyle: 'italic' }}>
-                    + {scannedItems.length - 3} more...
-                  </Text>
-                )}
               </View>
             )}
 
-            <View style={styles.modalActionRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={handleScanReceipt} disabled={isSubmitting}>
-                <Text style={styles.modalCancelText}>🎥 Scan AI</Text>
+            <View style={{ marginTop: 24, marginBottom: 8 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 12 }}>
+                Split with team:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 4 }}>
+                {members.filter(m => m.userId !== user.id).map((m) => {
+                  const isSelected = selectedMembers.includes(m.userId);
+                  return (
+                    <TouchableOpacity
+                      key={m.userId}
+                      style={[
+                        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, borderWidth: 1, borderColor: '#DDD' },
+                        isSelected && { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand }
+                      ]}
+                      onPress={() => {
+                        setSelectedMembers(prev =>
+                          prev.includes(m.userId) ? prev.filter(id => id !== m.userId) : [...prev, m.userId]
+                        );
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : theme.colors.textSecondary }}>
+                        {m.name || m.email?.split('@')[0]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 4 }}>
+                {selectedMembers.length > 0 ? `Splitting between ${selectedMembers.length} people` : "Not split yet"}
+              </Text>
+            </View>
+
+            <View style={[styles.modalActionRow, { marginTop: 20 }]}>
+              <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
+                <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
               </TouchableOpacity>
               <View style={{ flex: 1 }} />
               <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsModalVisible(false)} disabled={isSubmitting}>
@@ -801,23 +1088,143 @@ export default function LiveTransactionList({
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmCard}>
             <Text style={styles.confirmTitle}>Delete transaction?</Text>
-            <Text style={styles.confirmSubtitle}>This action cannot be undone.</Text>
+            <Text style={styles.confirmSubtitle}>This cannot be undone.</Text>
             <View style={styles.confirmActions}>
               <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmDeleteId(null)}>
-                <Text style={styles.confirmCancelText}>Cancel</Text>
+                <Text style={styles.confirmCancelText}>Keep it</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmDelete}
-                onPress={() => {
-                  if (confirmDeleteId) handleDeleteConfirmed(confirmDeleteId);
-                }}
-                disabled={!confirmDeleteId || Boolean(isDeletingId)}
+                onPress={() => confirmDeleteId && handleDeleteConfirmed(confirmDeleteId)}
+                disabled={Boolean(isDeletingId)}
               >
-                {isDeletingId ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.confirmDeleteText}>Delete</Text>}
+                {isDeletingId === confirmDeleteId ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmDeleteText}>Remove</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
+      </Modal>
+
+      <Modal visible={isInsightModalVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => !insightLoading && !forecastLoading && setIsInsightModalVisible(false)}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Vault Intelligence</Text>
+              <TouchableOpacity onPress={() => setIsInsightModalVisible(false)} style={styles.modalCloseIcon}>
+                <Text style={{ fontSize: 24, color: theme.colors.textMuted }}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.tabRow}>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'insights' && styles.tabBtnActive]}
+                onPress={() => { setActiveTab('insights'); if (!aiInsights) fetchAIInsights(); }}
+              >
+                <Text style={[styles.tabText, activeTab === 'insights' && styles.tabTextActive]}>✨ Insights</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'forecast' && styles.tabBtnActive]}
+                onPress={() => { setActiveTab('forecast'); setForecastData(null); fetchForecast(); }}
+              >
+                <Text style={[styles.tabText, activeTab === 'forecast' && styles.tabTextActive]}>📈 Forecast</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, activeTab === 'chat' && styles.tabBtnActive]}
+                onPress={() => { setActiveTab('chat'); }}
+              >
+                <Text style={[styles.tabText, activeTab === 'chat' && styles.tabTextActive]}>💬 Chat</Text>
+              </TouchableOpacity>
+            </View>
+
+            {activeTab === 'chat' ? (
+              <View style={{ flex: 1 }}>
+                {chatMessages.length === 0 && (
+                  <View style={{ padding: 16 }}>
+                    <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 12, textAlign: 'center' }}>
+                      Ask anything about your expenses! 🤖
+                    </Text>
+                    {['Who spent the most?', 'How much on food?', 'Total this month?'].map(q => (
+                      <TouchableOpacity
+                        key={q}
+                        style={styles.chatSuggestion}
+                        onPress={() => { setChatInput(q); }}
+                      >
+                        <Text style={styles.chatSuggestionText}>{q}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                <ScrollView
+                  ref={chatScrollRef}
+                  style={{ flex: 1, maxHeight: 320 }}
+                  contentContainerStyle={{ padding: 12, gap: 10 }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {chatMessages.map((msg, i) => (
+                    <View
+                      key={`chat-${i}`}
+                      style={[
+                        styles.chatBubble,
+                        msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAI
+                      ]}
+                    >
+                      <MarkdownText
+                        content={msg.text}
+                        theme={theme}
+                        textStyle={msg.role === 'user' ? { color: '#fff' } : undefined}
+                      />
+                    </View>
+                  ))}
+                  {isChatLoading && (
+                    <View style={styles.chatBubbleAI}>
+                      <ActivityIndicator size="small" color={theme.colors.brand} />
+                    </View>
+                  )}
+                </ScrollView>
+                <View style={styles.chatInputRow}>
+                  <TextInput
+                    style={styles.chatInput}
+                    placeholder="Ask about your expenses..."
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={chatInput}
+                    onChangeText={setChatInput}
+                    onSubmitEditing={sendChatMessage}
+                    returnKeyType="send"
+                    multiline={false}
+                  />
+                  <TouchableOpacity
+                    style={[styles.chatSendBtn, (!chatInput.trim() || isChatLoading) && { opacity: 0.5 }]}
+                    onPress={sendChatMessage}
+                    disabled={!chatInput.trim() || isChatLoading}
+                  >
+                    <Text style={styles.chatSendText}>↑</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (activeTab === 'insights' ? insightLoading : forecastLoading) ? (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <ActivityIndicator color={theme.colors.brand} size="large" />
+                <Text style={{ marginTop: 12, color: theme.colors.textMuted, textAlign: 'center' }}>
+                  {activeTab === 'insights' ? 'AI is analyzing your spending...' : 'Predicting future spending trends...'}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                <MarkdownText content={(activeTab === 'insights' ? aiInsights : forecastData) || ''} theme={theme} />
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, { marginTop: 24, alignSelf: 'center', width: '100%' }]}
+                  onPress={() => setIsInsightModalVisible(false)}
+                >
+                  <Text style={styles.modalSaveText}>Done</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </Pressable>
       </Modal>
 
       <Modal visible={pickerVisible} transparent animationType="fade">
@@ -950,10 +1357,10 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   containerWide: {
-    maxWidth: 1220,
+    maxWidth: 760,
     width: '100%',
     alignSelf: 'center',
-    paddingHorizontal: 30,
+    paddingHorizontal: 20,
   },
   loader: {
     flex: 1,
@@ -1247,6 +1654,112 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     fontFamily: theme.typography.body,
+  },
+  aiInsightsBtn: {
+    marginTop: 18,
+    backgroundColor: '#1B4D36',
+    borderRadius: theme.radius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#2D614A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  aiInsightsText: {
+    color: '#D0E9DD',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: theme.typography.body,
+  },
+  insightBody: {
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: theme.typography.body,
+    marginTop: 8,
+  },
+  quickAddCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: theme.radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 16,
+    ...shadows.sm,
+  },
+  quickAddInputWrap: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  quickAddInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#F7FAF8',
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E8F0E9',
+    color: theme.colors.textPrimary,
+    fontFamily: theme.typography.body,
+  },
+  quickAddBtn: {
+    backgroundColor: theme.colors.brand,
+    borderRadius: theme.radius.md,
+    height: 44,
+    width: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickAddBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  quickAddHint: {
+    marginTop: 8,
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    fontFamily: theme.typography.body,
+    opacity: 0.8,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F1',
+    borderRadius: theme.radius.md,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: theme.radius.sm,
+  },
+  tabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    ...shadows.sm,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    fontFamily: theme.typography.body,
+  },
+  tabTextActive: {
+    color: theme.colors.brand,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalCloseIcon: {
+    padding: 4,
   },
   modalOverlay: {
     flex: 1,
@@ -1603,5 +2116,129 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.body,
     fontWeight: '600',
     marginLeft: 12,
+  },
+  typeToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  typeToggle: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  typeToggleActiveDr: {
+    backgroundColor: '#FDF1F0',
+    borderColor: '#E8C8C6',
+  },
+  typeToggleActiveCr: {
+    backgroundColor: '#EAF7EE',
+    borderColor: '#BFDDCA',
+  },
+  typeToggleText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.textSecondary,
+    fontFamily: theme.typography.body,
+  },
+  typeToggleTextActive: {
+    color: theme.colors.textPrimary,
+  },
+  typeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  typeBadgeDr: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FEE2E2',
+  },
+  typeBadgeCr: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#DCFCE7',
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    fontFamily: theme.typography.body,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  chatSuggestion: {
+    backgroundColor: '#F0F5F1',
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#DCE8DC',
+  },
+  chatSuggestionText: {
+    color: theme.colors.brandStrong,
+    fontSize: 13,
+    fontWeight: '600',
+    fontFamily: theme.typography.body,
+  },
+  chatBubble: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: '85%',
+    marginBottom: 4,
+  },
+  chatBubbleUser: {
+    backgroundColor: theme.colors.brand,
+    alignSelf: 'flex-end',
+    borderBottomRightRadius: 4,
+  },
+  chatBubbleAI: {
+    backgroundColor: '#F0F5F1',
+    alignSelf: 'flex-start',
+    borderBottomLeftRadius: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#DCE8DC',
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    marginTop: 8,
+  },
+  chatInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#F7FAF8',
+    borderRadius: theme.radius.lg,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#E0EBE1',
+    color: theme.colors.textPrimary,
+    fontFamily: theme.typography.body,
+    fontSize: 14,
+  },
+  chatSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatSendText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 24,
   },
 });
