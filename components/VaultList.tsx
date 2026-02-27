@@ -400,8 +400,8 @@ export default function VaultList({
               <ScrollView style={styles.membersList} showsVerticalScrollIndicator={false}>
                 {membersData.map((m: any) => (
                   <View key={m.userId} style={styles.memberRow}>
-                    <Text style={styles.memberName}>{m.user?.name || 'Unknown'}</Text>
-                    <Text style={styles.memberEmail}>{m.user?.email || ''}</Text>
+                    <Text style={styles.memberName}>{m.name || 'Anonymous User'}</Text>
+                    <Text style={styles.memberEmail}>{m.email || ''}</Text>
                   </View>
                 ))}
               </ScrollView>
