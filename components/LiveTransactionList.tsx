@@ -347,6 +347,7 @@ export default function LiveTransactionList({
         setQuickAddText('');
         setIsModalVisible(true);
         setNotice({ type: 'success', message: 'AI parsed your request!' });
+      } else {
         // Multiple transactions → save all directly
         let successCount = 0;
         for (const txn of txns) {
