@@ -272,7 +272,7 @@ export default function VaultList({ user, onSelectVault }: { user: any; onSelect
               autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
             />
 
-            <Animated.View style={{ transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
+            <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
               <TouchableOpacity
                 style={[
                   styles.composerBtn,
@@ -285,7 +285,7 @@ export default function VaultList({ user, onSelectVault }: { user: any; onSelect
                 {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.composerBtnText}>{actionMode === 'create' ? '+ Create Space' : 'Join Now'}</Text>
+                  <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
                 )}
               </TouchableOpacity>
             </Animated.View>
@@ -473,6 +473,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
     minHeight: 52,
+    minWidth: 0,
     fontFamily: theme.typography.body,
   },
   composerBtn: {
