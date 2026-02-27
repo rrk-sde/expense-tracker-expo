@@ -170,6 +170,9 @@ export default function LiveTransactionList({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
+  const [confirmVaultAction, setConfirmVaultAction] = useState<'leave' | 'delete' | null>(null);
+  const [isActingOnVault, setIsActingOnVault] = useState(false);
+
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('all');
@@ -338,6 +341,35 @@ export default function LiveTransactionList({
     }
   };
 
+  const handleVaultAction = async () => {
+    if (!confirmVaultAction) return;
+    setNotice(null);
+    setIsActingOnVault(true);
+
+    try {
+      const endpoint = confirmVaultAction === 'delete' ? `/api/vaults/${vaultId}` : `/api/vaults/${vaultId}/leave`;
+      const method = confirmVaultAction === 'delete' ? 'DELETE' : 'POST';
+
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      const payload = await parsePayload(res);
+      if (!res.ok) {
+        setNotice({ type: 'error', message: payload?.error || `Could not ${confirmVaultAction} space` });
+        return;
+      }
+      onBack(); // Successfully left/deleted, instantly navigate back
+    } catch (e: any) {
+      setNotice({ type: 'error', message: e.message || 'Network error' });
+    } finally {
+      setIsActingOnVault(false);
+      setConfirmVaultAction(null);
+    }
+  };
+
   const isValidDateString = (value: string) => {
     if (!value) return true;
     const regex = /^\d{4}-\d{2}-\d{2}$/;
@@ -410,6 +442,12 @@ export default function LiveTransactionList({
                 <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity onPress={() => setConfirmVaultAction('leave')} style={styles.dangerOutlineBtn}>
+              <Text style={styles.dangerOutlineText}>Leave</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setConfirmVaultAction('delete')} style={styles.dangerOutlineBtn}>
+              <Text style={styles.dangerOutlineText}>Delete</Text>
+            </TouchableOpacity>
             <View style={styles.presenceBadge}>
               <View style={styles.presenceDot} />
               <Text style={styles.presenceText}>{activeUsers} active</Text>
@@ -620,6 +658,35 @@ export default function LiveTransactionList({
         </View>
       </Modal>
 
+      <Modal visible={Boolean(confirmVaultAction)} transparent animationType="fade">
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <Text style={styles.confirmTitle}>{confirmVaultAction === 'delete' ? 'Delete space?' : 'Leave space?'}</Text>
+            <Text style={styles.confirmSubtitle}>
+              {confirmVaultAction === 'delete'
+                ? 'This space and all its transactions will be permanently deleted.'
+                : 'You will lose access to this space and its transactions.'}
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmVaultAction(null)}>
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmDelete}
+                onPress={handleVaultAction}
+                disabled={isActingOnVault}
+              >
+                {isActingOnVault ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmDeleteText}>{confirmVaultAction === 'delete' ? 'Delete' : 'Leave'}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={Boolean(confirmDeleteId)} transparent animationType="fade">
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmCard}>
@@ -817,6 +884,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontFamily: theme.typography.body,
+  },
+  dangerOutlineBtn: {
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: '#E8C8C6',
+    backgroundColor: '#FDF1F0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  dangerOutlineText: {
+    color: theme.colors.danger,
+    fontWeight: '700',
+    fontFamily: theme.typography.body,
+    fontSize: 13,
   },
   presenceBadge: {
     borderRadius: theme.radius.pill,
