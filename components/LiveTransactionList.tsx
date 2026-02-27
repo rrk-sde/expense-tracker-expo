@@ -336,12 +336,40 @@ export default function LiveTransactionList({
       const data = await parsePayload(res);
       if (!res.ok) throw new Error(data?.error || 'Failed to parse text');
 
-      setTxnTitle(data.title || '');
-      setAmountStr(String(data.amount || ''));
-      setTxnType(data.type === 'CR' ? 'CR' : 'DR');
-      setQuickAddText('');
-      setIsModalVisible(true);
-      setNotice({ type: 'success', message: 'AI parsed your request!' });
+      const txns: any[] = data.transactions || [];
+      if (txns.length === 0) throw new Error('Could not understand the text. Try again.');
+
+      if (txns.length === 1) {
+        // Single transaction → open modal for review
+        setTxnTitle(txns[0].title || '');
+        setAmountStr(String(txns[0].amount || ''));
+        setTxnType(txns[0].type === 'CR' ? 'CR' : 'DR');
+        setQuickAddText('');
+        setIsModalVisible(true);
+        setNotice({ type: 'success', message: 'AI parsed your request!' });
+      } else {
+        // Multiple transactions → save all directly
+        let successCount = 0;
+        for (const txn of txns) {
+          try {
+            await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/transactions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: txn.title,
+                amount: Number(txn.amount),
+                type: txn.type === 'CR' ? 'CR' : 'DR',
+                category: txn.category || 'Other',
+                userId: user.id,
+              }),
+            });
+            successCount++;
+          } catch { }
+        }
+        setQuickAddText('');
+        setNotice({ type: 'success', message: `✅ ${successCount} transactions added by AI!` });
+        queryClient.invalidateQueries({ queryKey: ['transactions', vaultId] });
+      }
     } catch (e: any) {
       setNotice({ type: 'error', message: e.message });
     } finally {
