@@ -1035,10 +1035,14 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.body,
   },
   fabWrap: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    right: 10,
+    ...Platform.select({
+      web: { position: 'fixed' as 'absolute' },
+      default: { position: 'absolute' },
+    }),
+    bottom: 20,
+    left: 20,
+    right: 20,
+    zIndex: 50,
   },
   fabBtn: {
     borderRadius: theme.radius.pill,
