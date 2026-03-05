@@ -283,28 +283,49 @@ export default function LiveTransactionList({
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatScrollRef = useRef<ScrollView>(null);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+
+  const cancelActiveAIRequest = () => {
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort();
+      aiAbortControllerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    // Cancel request if tab changes or modal closes
+    cancelActiveAIRequest();
+  }, [activeTab, isInsightModalVisible]);
 
   const sendChatMessage = async () => {
     if (!chatInput.trim() || isChatLoading) return;
     const userMsg = { role: 'user' as const, text: chatInput.trim() };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
-    setIsChatLoading(true);
+    cancelActiveAIRequest();
+    const controller = new AbortController();
+    aiAbortControllerRef.current = controller;
+
     try {
       const history = chatMessages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text }));
       const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, message: userMsg.text, history })
+        body: JSON.stringify({ userId: user.id, message: userMsg.text, history }),
+        signal: controller.signal
       });
       const data = await parsePayload(res);
       const aiMsg = { role: 'ai' as const, text: data?.reply || 'Sorry, I could not answer that.' };
       setChatMessages(prev => [...prev, aiMsg]);
       setTimeout(() => chatScrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setChatMessages(prev => [...prev, { role: 'ai', text: `Error: ${e.message}` }]);
     } finally {
-      setIsChatLoading(false);
+      if (aiAbortControllerRef.current === controller) {
+        setIsChatLoading(false);
+        aiAbortControllerRef.current = null;
+      }
     }
   };
 
@@ -396,15 +417,25 @@ export default function LiveTransactionList({
     setIsInsightModalVisible(true);
     setActiveTab('insights');
     setAiInsights(null);
+    cancelActiveAIRequest();
+    const controller = new AbortController();
+    aiAbortControllerRef.current = controller;
+
     try {
-      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/ai-insights?userId=${user.id}`);
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/ai-insights?userId=${user.id}`, {
+        signal: controller.signal
+      });
       const data = await parsePayload(res);
       if (!res.ok) throw new Error(data?.error || 'Failed to fetch insights');
       setAiInsights(data.insights);
     } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setAiInsights(`Error: ${e.message}`);
     } finally {
-      setInsightLoading(false);
+      if (aiAbortControllerRef.current === controller) {
+        setInsightLoading(false);
+        aiAbortControllerRef.current = null;
+      }
     }
   };
 
@@ -413,14 +444,19 @@ export default function LiveTransactionList({
     setActiveTab('forecast');
     setForecastData(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/forecast?userId=${user.id}`);
+      const controller = new AbortController();
+      aiAbortControllerRef.current = controller;
+
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}/forecast?userId=${user.id}`, {
+        signal: controller.signal
+      });
       const data = await parsePayload(res);
       if (!res.ok) {
-        // Assuming the server returns an error message like "Add at least 3 transactions..."
         throw new Error(data?.error || 'Failed to fetch forecast');
       }
       setForecastData(data.forecast);
     } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setForecastData(`Error: ${e.message}`);
     } finally {
       setForecastLoading(false);
