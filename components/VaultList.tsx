@@ -301,7 +301,7 @@ export default function VaultList({
             </View>
             <View style={styles.spaceTitleWrap}>
               {isEditing ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <View style={{ flex: 1 }}>
                   <TextInput
                     style={styles.renameInput}
                     value={editingVaultName}
@@ -312,7 +312,7 @@ export default function VaultList({
                     maxLength={60}
                     placeholder="New name..."
                   />
-                  <View style={styles.renameActions}>
+                  <View style={[styles.renameActions, { marginTop: 8 }]}>
                     <TouchableOpacity
                       style={styles.renameSaveBtn}
                       onPress={() => renameVault(item.id)}
@@ -320,7 +320,7 @@ export default function VaultList({
                     >
                       {isRenaming
                         ? <ActivityIndicator size="small" color="#fff" />
-                        : <Text style={styles.renameSaveBtnText}>Save</Text>
+                        : <Text style={styles.renameSaveBtnText}>Save Changes</Text>
                       }
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1183,7 +1183,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   renameInput: {
-    flex: 1,
+    alignSelf: 'stretch',
     borderWidth: 1.5,
     borderColor: theme.colors.brand,
     borderRadius: theme.radius.md,
@@ -1199,13 +1199,13 @@ const styles = StyleSheet.create({
   renameActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
   renameSaveBtn: {
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.brand,
-    paddingHorizontal: 16,
-    height: 40,
+    paddingHorizontal: 18,
+    height: 38,
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.float,
