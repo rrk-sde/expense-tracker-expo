@@ -2,16 +2,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
+  Keyboard,
+  Modal,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
   useWindowDimensions,
   ScrollView,
-  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 
 import { shadows, theme } from '../theme';
@@ -42,20 +44,33 @@ export default function VaultList({
   user,
   onSelectVault,
   onLogout,
-}: {
+}: Readonly<{
   user: any;
   onSelectVault: (vaultId: string) => void;
   onLogout: () => void;
-}) {
+}>) {
   const { width } = useWindowDimensions();
   const isLarge = width >= 1200;
   const isTablet = width >= 760;
-  const numColumns = isLarge ? 3 : isTablet ? 2 : 1;
+  let numColumns: number;
+  if (isLarge) { numColumns = 3; }
+  else if (isTablet) { numColumns = 2; }
+  else { numColumns = 1; }
   const CONTENT_MAX_WIDTH = 800;
   const bottomPadH = width > CONTENT_MAX_WIDTH ? (width - CONTENT_MAX_WIDTH) / 2 : 12;
 
   const [vaults, setVaults] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const [summary, setSummary] = useState<Summary>({ spaceCount: 0, totalAmount7d: 0, transactionCount7d: 0, activeSpaces: 0 });
   const [newVaultName, setNewVaultName] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -90,8 +105,8 @@ export default function VaultList({
     const newItem = { id: String(Date.now() + Math.random()), text, time };
     setRecentFeed((prev) => {
       const next = [newItem, ...prev].slice(0, 30);
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
+      if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
+        (globalThis as any).localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
       }
       return next;
     });
@@ -163,8 +178,8 @@ export default function VaultList({
 
   useEffect(() => {
     loadVaults();
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem(`recent_feed_${user.id}`);
+    if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
+      const saved = (globalThis as any).localStorage.getItem(`recent_feed_${user.id}`);
       if (saved) {
         try {
           setRecentFeed(JSON.parse(saved));
@@ -230,7 +245,7 @@ export default function VaultList({
       const res = await fetch(`${API_BASE_URL}/api/vaults/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: joinCode.replace(/\s+/g, '').toUpperCase(), userId: user.id }),
+        body: JSON.stringify({ code: joinCode.replaceAll(/\s+/g, '').toUpperCase(), userId: user.id }),
       });
 
       const raw = await res.text();
@@ -375,177 +390,102 @@ export default function VaultList({
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.container, isLarge && styles.containerWide]}>
-          <View style={styles.heroCard}>
-            <View style={styles.heroHeader}>
-              <Text style={styles.heroKicker}>WORKSPACES</Text>
-              <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
-                <Text style={styles.logoutBtnText}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.heroTitle}>Create and manage money spaces for every group.</Text>
-            <Text style={styles.heroSubtitle}>
-              Build a dedicated board for trips, home expenses, teams, and events. Everything updates in real time.
-            </Text>
-
-            <View style={styles.insightRow}>
-              {insights.map((item) => (
-                <View key={item.title} style={styles.insightItem}>
-                  <Text style={styles.insightValue}>{item.value}</Text>
-                  <Text style={styles.insightTitle}>{item.title}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={isLarge ? styles.desktopRow : styles.mobileColumn}>
-            <View style={isLarge ? styles.mainContent : styles.fullWidth}>
-              <View style={styles.composerCard}>
-                <View style={styles.segmented}>
-                  <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
-                    <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
-                    <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.composerBody}>
-                  <Text style={styles.composerLabel}>
-                    {actionMode === 'create' ? 'Space Name' : 'Invite Code'}
-                  </Text>
-                  <View style={styles.composerRow}>
-                    <TextInput
-                      style={styles.composerInput}
-                      placeholder={actionMode === 'create' ? 'e.g. Goa Trip 2024' : 'XXXX-XXXX'}
-                      placeholderTextColor={theme.colors.textMuted}
-                      value={actionMode === 'create' ? newVaultName : joinCode}
-                      onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
-                      onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                      autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
-                    />
-
-                    <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
-                      <TouchableOpacity
-                        style={[
-                          styles.composerBtn,
-                          actionMode === 'join' && styles.composerBtnJoin,
-                          !isPrimaryEnabled && styles.composerBtnDisabled,
-                        ]}
-                        onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                        disabled={!isPrimaryEnabled}
-                      >
-                        {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
-                        )}
-                      </TouchableOpacity>
-                    </Animated.View>
-                  </View>
-                </View>
-
-                {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
-
-                {actionMode === 'create' && (
-                  <View style={styles.templateRow}>
-                    {templates.map((name) => (
-                      <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
-                        <Text style={styles.templateChipText}>+ {name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={Keyboard.dismiss}
+        >
+          <View style={[styles.container, isLarge && styles.containerWide]}>
+            <View style={styles.heroCard}>
+              <View style={styles.heroHeader}>
+                <Text style={styles.heroKicker}>WORKSPACES</Text>
+                <TouchableOpacity onPress={onLogout} style={styles.logoutBtn}>
+                  <Text style={styles.logoutBtnText}>Logout</Text>
+                </TouchableOpacity>
               </View>
+              <Text style={styles.heroTitle}>Create and manage money spaces for every group.</Text>
+              <Text style={styles.heroSubtitle}>
+                Build a dedicated board for trips, home expenses, teams, and events. Everything updates in real time.
+              </Text>
 
-              {!isLarge && (
-                <View style={[styles.footerWrap, { marginBottom: 12 }]}>
-                  <Text style={styles.footerTitle}>Recent activity</Text>
-                  {recentFeed.length ? (
-                    <>
-                      {(feedExpanded ? recentFeed : recentFeed.slice(0, 3)).map((item) => (
-                        <View key={item.id} style={styles.feedRow}>
-                          <Text style={styles.feedText}>{item.text}</Text>
-                          <Text style={styles.feedTime}>{item.time}</Text>
-                        </View>
-                      ))}
-                      {recentFeed.length > 3 && (
-                        <TouchableOpacity style={styles.showMoreBtn} onPress={() => setFeedExpanded(!feedExpanded)}>
-                          <Text style={styles.showMoreText}>
-                            {feedExpanded ? 'show less' : `+ show more (${recentFeed.length - 3})`}
-                          </Text>
+              <View style={styles.insightRow}>
+                {insights.map((item) => (
+                  <View key={item.title} style={styles.insightItem}>
+                    <Text style={styles.insightValue}>{item.value}</Text>
+                    <Text style={styles.insightTitle}>{item.title}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            <View style={isLarge ? styles.desktopRow : styles.mobileColumn}>
+              <View style={isLarge ? styles.mainContent : styles.fullWidth}>
+                <View style={styles.composerCard}>
+                  <View style={styles.segmented}>
+                    <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
+                      <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
+                      <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.composerBody}>
+                    <Text style={styles.composerLabel}>
+                      {actionMode === 'create' ? 'Space Name' : 'Invite Code'}
+                    </Text>
+                    <View style={styles.composerRow}>
+                      <TextInput
+                        style={styles.composerInput}
+                        placeholder={actionMode === 'create' ? 'e.g. Goa Trip 2024' : 'XXXX-XXXX'}
+                        placeholderTextColor={theme.colors.textMuted}
+                        value={actionMode === 'create' ? newVaultName : joinCode}
+                        onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
+                        onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                        autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
+                      />
+
+                      <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.composerBtn,
+                            actionMode === 'join' && styles.composerBtnJoin,
+                            !isPrimaryEnabled && styles.composerBtnDisabled,
+                          ]}
+                          onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                          disabled={!isPrimaryEnabled}
+                        >
+                          {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
+                            <ActivityIndicator color="#fff" />
+                          ) : (
+                            <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
+                          )}
                         </TouchableOpacity>
-                      )}
-                    </>
-                  ) : (
-                    <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
+                      </Animated.View>
+                    </View>
+                  </View>
+
+                  {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
+
+                  {actionMode === 'create' && (
+                    <View style={styles.templateRow}>
+                      {templates.map((name) => (
+                        <TouchableOpacity key={name} style={styles.templateChip} onPress={() => createVault(name)}>
+                          <Text style={styles.templateChipText}>+ {name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   )}
                 </View>
-              )}
 
-              <View style={styles.gridContainer}>
-                {loading && vaults.length === 0 ? (
-                  <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 40 }} />
-                ) : (
-                  <>
-                    {loading && vaults.length > 0 && (
-                      <View style={styles.refreshIndicator}>
-                        <ActivityIndicator size="small" color={theme.colors.brand} />
-                        <Text style={styles.refreshText}>Updating spaces...</Text>
-                      </View>
-                    )}
-
-                    {vaults.length > 0 && (
-                      <View style={styles.searchBarWrap}>
-                        <TextInput
-                          style={styles.searchInput}
-                          placeholder="Search spaces by name or code..."
-                          placeholderTextColor={theme.colors.textMuted}
-                          value={searchQuery}
-                          onChangeText={setSearchQuery}
-                          autoCapitalize="none"
-                        />
-                      </View>
-                    )}
-
-                    {(() => {
-                      const filtered = vaults.filter(v =>
-                        v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        String(v.id).slice(0, 8).toUpperCase().includes(searchQuery.toUpperCase())
-                      );
-
-                      if (vaults.length === 0) {
-                        return (
-                          <View style={styles.emptyWrap}>
-                            <Text style={styles.emptyTitle}>No spaces yet</Text>
-                            <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
-                          </View>
-                        );
-                      }
-
-                      if (filtered.length === 0) {
-                        return (
-                          <View style={styles.emptyWrap}>
-                            <Text style={styles.emptyTitle}>No matches found</Text>
-                            <Text style={styles.emptyText}>Try searching for something else or clear the search.</Text>
-                          </View>
-                        );
-                      }
-
-                      return (
-                        <View style={styles.gridWrap}>
-                          {filtered.map((item) => renderSpace({ item }))}
-                        </View>
-                      );
-                    })()}
-                  </>
-                )}
-              </View>
-
-              {isLarge && (
-                <View style={styles.sidebar}>
-                  <View style={[styles.footerWrap, { marginTop: 0, flex: 1 }]}>
+                {!isLarge && (
+                  <View style={[styles.footerWrap, { marginBottom: 12 }]}>
                     <Text style={styles.footerTitle}>Recent activity</Text>
                     {recentFeed.length ? (
                       <>
@@ -567,42 +507,140 @@ export default function VaultList({
                       <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
                     )}
                   </View>
+                )}
+
+                <View style={styles.gridContainer}>
+                  {loading && vaults.length === 0 ? (
+                    <ActivityIndicator size="large" color={theme.colors.brand} style={{ marginTop: 40 }} />
+                  ) : (
+                    <>
+                      {loading && vaults.length > 0 && (
+                        <View style={styles.refreshIndicator}>
+                          <ActivityIndicator size="small" color={theme.colors.brand} />
+                          <Text style={styles.refreshText}>Updating spaces...</Text>
+                        </View>
+                      )}
+
+                      {vaults.length > 0 && (
+                        <View style={styles.searchBarWrap}>
+                          <TextInput
+                            style={styles.searchInput}
+                            placeholder="Search spaces by name or code..."
+                            placeholderTextColor={theme.colors.textMuted}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            autoCapitalize="none"
+                            returnKeyType="search"
+                            onSubmitEditing={Keyboard.dismiss}
+                          />
+                        </View>
+                      )}
+
+                      {(() => {
+                        const filtered = vaults.filter(v =>
+                          v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          String(v.id).slice(0, 8).toUpperCase().includes(searchQuery.toUpperCase())
+                        );
+
+                        if (vaults.length === 0) {
+                          return (
+                            <View style={styles.emptyWrap}>
+                              <Text style={styles.emptyTitle}>No spaces yet</Text>
+                              <Text style={styles.emptyText}>Create your first shared space to start tracking expenses.</Text>
+                            </View>
+                          );
+                        }
+
+                        if (filtered.length === 0) {
+                          return (
+                            <View style={styles.emptyWrap}>
+                              <Text style={styles.emptyTitle}>No matches found</Text>
+                              <Text style={styles.emptyText}>Try searching for something else or clear the search.</Text>
+                            </View>
+                          );
+                        }
+
+                        return (
+                          <View style={styles.gridWrap}>
+                            {filtered.map((item) => (
+                              <React.Fragment key={item.id}>
+                                {renderSpace({ item })}
+                              </React.Fragment>
+                            ))}
+                          </View>
+                        );
+                      })()}
+                    </>
+                  )}
                 </View>
-              )}
+
+                {isLarge && (
+                  <View style={styles.sidebar}>
+                    <View style={[styles.footerWrap, { marginTop: 0, flex: 1 }]}>
+                      <Text style={styles.footerTitle}>Recent activity</Text>
+                      {recentFeed.length ? (
+                        <>
+                          {(feedExpanded ? recentFeed : recentFeed.slice(0, 3)).map((item) => (
+                            <View key={item.id} style={styles.feedRow}>
+                              <Text style={styles.feedText}>{item.text}</Text>
+                              <Text style={styles.feedTime}>{item.time}</Text>
+                            </View>
+                          ))}
+                          {recentFeed.length > 3 && (
+                            <TouchableOpacity style={styles.showMoreBtn} onPress={() => setFeedExpanded(!feedExpanded)}>
+                              <Text style={styles.showMoreText}>
+                                {feedExpanded ? 'show less' : `+ show more (${recentFeed.length - 3})`}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </>
+                      ) : (
+                        <Text style={styles.footerMuted}>Actions from this screen appear here.</Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-      <View style={[styles.bottomBar, { left: bottomPadH, right: bottomPadH }]}>
-        <Text style={styles.bottomText}>{summary.spaceCount || vaults.length} spaces</Text>
-        <Text style={styles.bottomDot}>•</Text>
-        <Text style={styles.bottomText}>₹{Number(summary.totalAmount7d || 0).toFixed(0)} this week</Text>
-        <Text style={styles.bottomDot}>•</Text>
-        <Text style={styles.bottomText}>{summary.activeSpaces || 0} active</Text>
-      </View>
+      {!isKeyboardVisible && (
+        <View style={[styles.bottomBar, { left: bottomPadH, right: bottomPadH }]}>
+          <Text style={styles.bottomText}>{summary.spaceCount || vaults.length} spaces</Text>
+          <Text style={styles.bottomDot}>•</Text>
+          <Text style={styles.bottomText}>₹{Number(summary.totalAmount7d || 0).toFixed(0)} this week</Text>
+          <Text style={styles.bottomDot}>•</Text>
+          <Text style={styles.bottomText}>{summary.activeSpaces || 0} active</Text>
+        </View>
+      )}
 
       <Modal visible={membersModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{membersVaultName} Members</Text>
-            {membersLoading ? (
-              <ActivityIndicator color={theme.colors.brand} />
-            ) : (
-              <ScrollView style={styles.membersList} showsVerticalScrollIndicator={false}>
-                {membersData.map((m: any) => (
-                  <View key={m.userId} style={styles.memberRow}>
-                    <Text style={styles.memberName}>{m.name || 'Anonymous User'}</Text>
-                    <Text style={styles.memberEmail}>{m.email || ''}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setMembersModalVisible(false)}>
-              <Text style={styles.modalCancelText}>Close</Text>
-            </TouchableOpacity>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>{membersVaultName} Members</Text>
+                {membersLoading ? (
+                  <ActivityIndicator color={theme.colors.brand} />
+                ) : (
+                  <ScrollView style={styles.membersList} showsVerticalScrollIndicator={false}>
+                    {membersData.map((m: any) => (
+                      <View key={m.userId} style={styles.memberRow}>
+                        <Text style={styles.memberName}>{m.name || 'Anonymous User'}</Text>
+                        <Text style={styles.memberEmail}>{m.email || ''}</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+                <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setMembersModalVisible(false)}>
+                  <Text style={styles.modalCancelText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </View>
   );
@@ -1066,6 +1104,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.xl,
     padding: 24,
     ...shadows.float,
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalTitle: {
     fontSize: 20,

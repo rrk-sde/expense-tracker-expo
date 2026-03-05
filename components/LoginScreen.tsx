@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,7 +20,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
 type AuthMode = 'signin' | 'signup' | 'forgot';
 
-export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void }) {
+export default function LoginScreen({ onLogin }: Readonly<{ onLogin: (user: any) => void }>) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 950;
 
@@ -206,6 +207,10 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
           placeholderTextColor={theme.colors.textMuted}
           value={name}
           onChangeText={setName}
+          returnKeyType="next"
+          textContentType="name"
+          autoComplete="name"
+          onSubmitEditing={() => { /* focus email */ }}
         />
       )}
 
@@ -217,6 +222,9 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
+        returnKeyType="next"
+        textContentType="emailAddress"
+        autoComplete="email"
       />
 
       {mode !== 'forgot' && (
@@ -228,6 +236,10 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
+            returnKeyType="go"
+            textContentType={mode === 'signup' ? 'newPassword' : 'password'}
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            onSubmitEditing={handleSubmit}
           />
           <TouchableOpacity style={styles.inputAction} onPress={() => setShowPassword((v) => !v)}>
             <Text style={styles.inputActionText}>{showPassword ? 'Hide' : 'Show'}</Text>
@@ -244,6 +256,9 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
             value={resetToken}
             onChangeText={setResetToken}
             autoCapitalize="characters"
+            returnKeyType="next"
+            textContentType="oneTimeCode"
+            onSubmitEditing={handleResetPassword}
           />
           <View style={styles.inputRow}>
             <TextInput
@@ -253,6 +268,9 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry={!showNewPassword}
+              returnKeyType="go"
+              textContentType="newPassword"
+              onSubmitEditing={handleResetPassword}
             />
             <TouchableOpacity style={styles.inputAction} onPress={() => setShowNewPassword((v) => !v)}>
               <Text style={styles.inputActionText}>{showNewPassword ? 'Hide' : 'Show'}</Text>
@@ -348,10 +366,21 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: any) => void 
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.mobileWrap} keyboardShouldPersistTaps="handled">
-      {panel}
-      {form}
-    </ScrollView>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <ScrollView
+        contentContainerStyle={styles.mobileWrap}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={Keyboard.dismiss}
+        showsVerticalScrollIndicator={false}
+      >
+        {panel}
+        {form}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -438,8 +467,10 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.xl,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: 18,
+    padding: 24,
     ...shadows.float,
+    width: '100%',
+    maxWidth: 440,
   },
   modeRow: {
     flexDirection: 'row',

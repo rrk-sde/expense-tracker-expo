@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -10,8 +11,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
   useWindowDimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
@@ -223,14 +226,14 @@ export default function LiveTransactionList({
     const now = new Date();
     const time = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     const newItem = { id: String(Date.now() + Math.random()), text, time };
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem(`recent_feed_${user.id}`);
+    if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
+      const saved = (globalThis as any).localStorage.getItem(`recent_feed_${user.id}`);
       let feed = [];
       try {
         feed = saved ? JSON.parse(saved) : [];
       } catch (e) { }
       const next = [newItem, ...feed].slice(0, 10);
-      window.localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
+      (globalThis as any).localStorage.setItem(`recent_feed_${user.id}`, JSON.stringify(next));
     }
   };
   const queryClient = useQueryClient();
@@ -794,634 +797,673 @@ export default function LiveTransactionList({
 
 
   return (
-    <View style={styles.screen}>
-      <View style={[styles.container, isDesktop && styles.containerWide]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-            <Text style={styles.backBtnText}>All Spaces</Text>
-          </TouchableOpacity>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.screen}>
+        <View style={[styles.container, isDesktop && styles.containerWide]}>
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+              <Text style={styles.backBtnText}>All Spaces</Text>
+            </TouchableOpacity>
 
-          <View style={styles.topActions}>
-            {isDesktop && (
-              <TouchableOpacity style={styles.addBtnDesktop} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
-                <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
+            <View style={styles.topActions}>
+              {isDesktop && (
+                <TouchableOpacity style={styles.addBtnDesktop} onPress={() => { Keyboard.dismiss(); setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
+                  <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={() => setConfirmVaultAction('leave')} style={styles.dangerOutlineBtn}>
+                <Text style={styles.dangerOutlineText}>Leave</Text>
               </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => setConfirmVaultAction('leave')} style={styles.dangerOutlineBtn}>
-              <Text style={styles.dangerOutlineText}>Leave</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setConfirmVaultAction('delete')} style={styles.dangerOutlineBtn}>
-              <Text style={styles.dangerOutlineText}>Delete</Text>
-            </TouchableOpacity>
-            <View style={styles.presenceBadge}>
-              <View style={styles.presenceDot} />
-              <Text style={styles.presenceText}>{activeUsers} active</Text>
+              <TouchableOpacity onPress={() => setConfirmVaultAction('delete')} style={styles.dangerOutlineBtn}>
+                <Text style={styles.dangerOutlineText}>Delete</Text>
+              </TouchableOpacity>
+              <View style={styles.presenceBadge}>
+                <View style={styles.presenceDot} />
+                <Text style={styles.presenceText}>{activeUsers} active</Text>
+              </View>
             </View>
+          </View>
+
+          <FlatList
+            data={transactions}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onEndReachedThreshold={0.35}
+            onEndReached={() => {
+              if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+            }}
+            ListHeaderComponent={
+              <>
+                {(isLoading && transactions.length === 0) ? (
+                  <View style={[styles.loader, { marginTop: 100, marginBottom: 40 }]}>
+                    <ActivityIndicator size="large" color={theme.colors.brand} />
+                    <Text style={{ marginTop: 16, color: theme.colors.textMuted, fontFamily: theme.typography.body }}>
+                      Loading space activity...
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.heroCard}>
+                      <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
+                      <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
+                      <Text style={styles.heroSubtitle}>
+                        Filter by month, year, and date range while keeping real-time updates from your team.
+                      </Text>
+                      <View style={styles.heroStats}>
+                        <View style={styles.heroStatItem}>
+                          <Text style={styles.heroStatValue}>{totalCount}</Text>
+                          <Text style={styles.heroStatLabel}>Total results</Text>
+                        </View>
+                        <View style={styles.heroStatItem}>
+                          <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
+                          <Text style={styles.heroStatLabel}>7-day spend</Text>
+                        </View>
+                        <View style={styles.heroStatItem}>
+                          <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
+                          <Text style={styles.heroStatLabel}>7-day count</Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity style={styles.aiInsightsBtn} onPress={fetchAIInsights}>
+                        <Text style={styles.aiInsightsText}>✨ AI Spending Insights</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.quickAddCard}>
+                      <View style={styles.quickAddInputWrap}>
+                        <TextInput
+                          style={styles.quickAddInput}
+                          placeholder='e.g. "₹250 for travel via Uber"'
+                          placeholderTextColor={theme.colors.textMuted}
+                          value={quickAddText}
+                          onChangeText={setQuickAddText}
+                          onSubmitEditing={handleQuickAdd}
+                        />
+                        <TouchableOpacity
+                          style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
+                          onPress={handleQuickAdd}
+                          disabled={isParsingText}
+                        >
+                          {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+                    </View>
+
+                    <View style={styles.filterCard}>
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search expenses"
+                        placeholderTextColor={theme.colors.textMuted}
+                        value={searchInput}
+                        onChangeText={setSearchInput}
+                        returnKeyType="search"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+
+                      <View style={styles.filterMetaRow}>
+                        <TouchableOpacity style={styles.filterOpenBtn} onPress={() => { Keyboard.dismiss(); setFilterSheetVisible(true); }}>
+                          <Text style={styles.filterOpenBtnText}>Filters</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
+                        {(appliedFromDate || appliedToDate) && (
+                          <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
+                        )}
+                      </View>
+                    </View>
+
+                    {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
+                    {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
+                  </>
+                )}
+              </>
+            }
+            ListEmptyComponent={
+              isLoading ? null : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateTitle}>No expenses found</Text>
+                  <Text style={styles.emptyStateText}>Try clearing filters or add a new expense.</Text>
+                </View>
+              )
+            }
+            ListFooterComponent={
+              <View style={styles.footerLoad}>
+                {hasNextPage ? (
+                  isFetchingNextPage ? (
+                    <ActivityIndicator color={theme.colors.brand} />
+                  ) : (
+                    <Text style={styles.footerHint}>Scroll for more</Text>
+                  )
+                ) : (
+                  <Text style={styles.footerHint}>End of list</Text>
+                )}
+              </View>
+            }
+          />
+
+          <View style={[styles.fabWrap, { left: fabPadH, right: fabPadH }]}>
+            <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
+              <Text style={styles.fabBtnText}>+ Add expense</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <FlatList
-          data={transactions}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onEndReachedThreshold={0.35}
-          onEndReached={() => {
-            if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-          }}
-          ListHeaderComponent={
-            <>
-              {(isLoading && transactions.length === 0) ? (
-                <View style={[styles.loader, { marginTop: 100, marginBottom: 40 }]}>
-                  <ActivityIndicator size="large" color={theme.colors.brand} />
-                  <Text style={{ marginTop: 16, color: theme.colors.textMuted, fontFamily: theme.typography.body }}>
-                    Loading space activity...
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.heroCard}>
-                    <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
-                    <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
-                    <Text style={styles.heroSubtitle}>
-                      Filter by month, year, and date range while keeping real-time updates from your team.
-                    </Text>
-                    <View style={styles.heroStats}>
-                      <View style={styles.heroStatItem}>
-                        <Text style={styles.heroStatValue}>{totalCount}</Text>
-                        <Text style={styles.heroStatLabel}>Total results</Text>
-                      </View>
-                      <View style={styles.heroStatItem}>
-                        <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
-                        <Text style={styles.heroStatLabel}>7-day spend</Text>
-                      </View>
-                      <View style={styles.heroStatItem}>
-                        <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
-                        <Text style={styles.heroStatLabel}>7-day count</Text>
-                      </View>
-                    </View>
+        <Modal visible={isModalVisible} transparent animationType="slide">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ width: '100%', alignItems: 'center' }}
+              >
+                <TouchableWithoutFeedback>
+                  <View style={styles.modalCard}>
+                    <Text style={styles.modalTitle}>{editingTxnId ? 'Edit transaction' : 'Add transaction'}</Text>
 
-                    <TouchableOpacity style={styles.aiInsightsBtn} onPress={fetchAIInsights}>
-                      <Text style={styles.aiInsightsText}>✨ AI Spending Insights</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.quickAddCard}>
-                    <View style={styles.quickAddInputWrap}>
-                      <TextInput
-                        style={styles.quickAddInput}
-                        placeholder='e.g. "₹250 for travel via Uber"'
-                        placeholderTextColor={theme.colors.textMuted}
-                        value={quickAddText}
-                        onChangeText={setQuickAddText}
-                        onSubmitEditing={handleQuickAdd}
-                      />
+                    <View style={styles.typeToggleRow}>
                       <TouchableOpacity
-                        style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
-                        onPress={handleQuickAdd}
-                        disabled={isParsingText}
+                        style={[styles.typeToggle, txnType === 'DR' && styles.typeToggleActiveDr]}
+                        onPress={() => setTxnType('DR')}
                       >
-                        {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
+                        <Text style={[styles.typeToggleText, txnType === 'DR' && styles.typeToggleTextActive]}>↓ Spent</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.typeToggle, txnType === 'CR' && styles.typeToggleActiveCr]}
+                        onPress={() => setTxnType('CR')}
+                      >
+                        <Text style={[styles.typeToggleText, txnType === 'CR' && styles.typeToggleTextActive]}>↑ Income</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
-                  </View>
 
-                  <View style={styles.filterCard}>
                     <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search expenses"
+                      style={styles.modalInput}
+                      placeholder="Amount (₹)"
                       placeholderTextColor={theme.colors.textMuted}
-                      value={searchInput}
-                      onChangeText={setSearchInput}
+                      keyboardType="numeric"
+                      value={amountStr}
+                      onChangeText={setAmountStr}
+                      autoFocus={true}
                     />
 
-                    <View style={styles.filterMetaRow}>
-                      <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setFilterSheetVisible(true)}>
-                        <Text style={styles.filterOpenBtnText}>Filters</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
-                      {(appliedFromDate || appliedToDate) && (
-                        <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="What did you buy?"
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={txnTitle}
+                      onChangeText={setTxnTitle}
+                      onSubmitEditing={handleSubmit}
+                    />
+
+                    {scannedItems.length > 0 && (
+                      <View style={{ marginTop: 20, backgroundColor: '#F8FBF9', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E8F0E9' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 10 }}>
+                          ✨ AI Line Items:
+                        </Text>
+                        {scannedItems.map((item, i) => (
+                          <View key={`scanned-${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>• {item.name}</Text>
+                            <Text style={{ fontSize: 13, color: theme.colors.brand, fontWeight: '700' }}>₹{item.price.toFixed(0)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <View style={{ marginTop: 24, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 12 }}>
+                        Split with team:
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 4 }}>
+                        {members.filter(m => m.userId !== user.id).map((m) => {
+                          const isSelected = selectedMembers.includes(m.userId);
+                          return (
+                            <TouchableOpacity
+                              key={m.userId}
+                              style={[
+                                { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, borderWidth: 1, borderColor: '#DDD' },
+                                isSelected && { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand }
+                              ]}
+                              onPress={() => {
+                                setSelectedMembers(prev =>
+                                  prev.includes(m.userId) ? prev.filter(id => id !== m.userId) : [...prev, m.userId]
+                                );
+                              }}
+                            >
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : theme.colors.textSecondary }}>
+                                {m.name || m.email?.split('@')[0]}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                      <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 4 }}>
+                        {selectedMembers.length > 0 ? `Splitting between ${selectedMembers.length} people` : "Not split yet"}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.modalActionRow, { marginTop: 20 }]}>
+                      {!editingTxnId && (
+                        <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
+                          <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
+                        </TouchableOpacity>
                       )}
+                      <View style={{ flex: 1 }} />
+                      <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsModalVisible(false); setEditingTxnId(null); }} disabled={isSubmitting}>
+                        <Text style={styles.modalCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
+                        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>Save</Text>}
+                      </TouchableOpacity>
                     </View>
                   </View>
-
-                  {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
-                  {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
-                </>
-              )}
-            </>
-          }
-          ListEmptyComponent={
-            isLoading ? null : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateTitle}>No expenses found</Text>
-                <Text style={styles.emptyStateText}>Try clearing filters or add a new expense.</Text>
-              </View>
-            )
-          }
-          ListFooterComponent={
-            <View style={styles.footerLoad}>
-              {hasNextPage ? (
-                isFetchingNextPage ? (
-                  <ActivityIndicator color={theme.colors.brand} />
-                ) : (
-                  <Text style={styles.footerHint}>Scroll for more</Text>
-                )
-              ) : (
-                <Text style={styles.footerHint}>End of list</Text>
-              )}
+                </TouchableWithoutFeedback>
+              </KeyboardAvoidingView>
             </View>
-          }
-        />
+          </TouchableWithoutFeedback>
+        </Modal>
 
-        <View style={[styles.fabWrap, { left: fabPadH, right: fabPadH }]}>
-          <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
-            <Text style={styles.fabBtnText}>+ Add expense</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        <Modal visible={filterSheetVisible} transparent animationType="slide">
+          <View style={styles.sheetOverlay}>
+            <Pressable style={styles.sheetBackdrop} onPress={() => setFilterSheetVisible(false)} />
+            <View style={styles.sheetCard}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Filters</Text>
 
-      <Modal visible={isModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{editingTxnId ? 'Edit transaction' : 'Add transaction'}</Text>
-
-            <View style={styles.typeToggleRow}>
-              <TouchableOpacity
-                style={[styles.typeToggle, txnType === 'DR' && styles.typeToggleActiveDr]}
-                onPress={() => setTxnType('DR')}
-              >
-                <Text style={[styles.typeToggleText, txnType === 'DR' && styles.typeToggleTextActive]}>↓ Spent</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeToggle, txnType === 'CR' && styles.typeToggleActiveCr]}
-                onPress={() => setTxnType('CR')}
-              >
-                <Text style={[styles.typeToggleText, txnType === 'CR' && styles.typeToggleTextActive]}>↑ Income</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Amount (₹)"
-              placeholderTextColor={theme.colors.textMuted}
-              keyboardType="numeric"
-              value={amountStr}
-              onChangeText={setAmountStr}
-              autoFocus={true}
-            />
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="What did you buy?"
-              placeholderTextColor={theme.colors.textMuted}
-              value={txnTitle}
-              onChangeText={setTxnTitle}
-              onSubmitEditing={handleSubmit}
-            />
-
-            {scannedItems.length > 0 && (
-              <View style={{ marginTop: 20, backgroundColor: '#F8FBF9', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E8F0E9' }}>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 10 }}>
-                  ✨ AI Line Items:
-                </Text>
-                {scannedItems.map((item, i) => (
-                  <View key={`scanned-${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>• {item.name}</Text>
-                    <Text style={{ fontSize: 13, color: theme.colors.brand, fontWeight: '700' }}>₹{item.price.toFixed(0)}</Text>
-                  </View>
+              <Text style={styles.sheetLabel}>Year</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {yearOptions.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.filterChip, selectedYear === opt.value && styles.filterChipActive]}
+                    onPress={() => setSelectedYear(opt.value)}
+                  >
+                    <Text style={[styles.filterChipText, selectedYear === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
                 ))}
-              </View>
-            )}
-
-            <View style={{ marginTop: 24, marginBottom: 8 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: theme.colors.textSecondary, marginBottom: 12 }}>
-                Split with team:
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 4 }}>
-                {members.filter(m => m.userId !== user.id).map((m) => {
-                  const isSelected = selectedMembers.includes(m.userId);
-                  return (
-                    <TouchableOpacity
-                      key={m.userId}
-                      style={[
-                        { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, borderWidth: 1, borderColor: '#DDD' },
-                        isSelected && { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand }
-                      ]}
-                      onPress={() => {
-                        setSelectedMembers(prev =>
-                          prev.includes(m.userId) ? prev.filter(id => id !== m.userId) : [...prev, m.userId]
-                        );
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? '#fff' : theme.colors.textSecondary }}>
-                        {m.name || m.email?.split('@')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
               </ScrollView>
-              <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 4 }}>
-                {selectedMembers.length > 0 ? `Splitting between ${selectedMembers.length} people` : "Not split yet"}
-              </Text>
-            </View>
 
-            <View style={[styles.modalActionRow, { marginTop: 20 }]}>
-              {!editingTxnId && (
-                <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
-                  <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
+              <Text style={styles.sheetLabel}>Month</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                {monthOptions.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.filterChip, selectedMonth === opt.value && styles.filterChipActive]}
+                    onPress={() => setSelectedMonth(opt.value)}
+                  >
+                    <Text style={[styles.filterChipText, selectedMonth === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.sheetLabel}>Date range</Text>
+              <View style={styles.dateRow}>
+                <TouchableOpacity style={[styles.dateBtn]} onPress={() => openPicker('from')}>
+                  <Text style={fromDateInput ? styles.dateText : styles.datePlaceholder}>{fromDateInput || 'From date'}</Text>
                 </TouchableOpacity>
-              )}
-              <View style={{ flex: 1 }} />
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsModalVisible(false); setEditingTxnId(null); }} disabled={isSubmitting}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
-                {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>Save</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+                <TouchableOpacity style={[styles.dateBtn]} onPress={() => openPicker('to')}>
+                  <Text style={toDateInput ? styles.dateText : styles.datePlaceholder}>{toDateInput || 'To date'}</Text>
+                </TouchableOpacity>
+              </View>
 
-      <Modal visible={filterSheetVisible} transparent animationType="slide">
-        <View style={styles.sheetOverlay}>
-          <Pressable style={styles.sheetBackdrop} onPress={() => setFilterSheetVisible(false)} />
-          <View style={styles.sheetCard}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Filters</Text>
-
-            <Text style={styles.sheetLabel}>Year</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {yearOptions.map((opt) => (
+              <View style={styles.sheetActionRow}>
                 <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.filterChip, selectedYear === opt.value && styles.filterChipActive]}
-                  onPress={() => setSelectedYear(opt.value)}
+                  style={styles.applyBtn}
+                  onPress={() => {
+                    if (!isValidDateString(fromDateInput) || !isValidDateString(toDateInput)) {
+                      setNotice({ type: 'error', message: 'Use YYYY-MM-DD format.' });
+                      return;
+                    }
+                    if (fromDateInput && toDateInput && new Date(fromDateInput) > new Date(toDateInput)) {
+                      setNotice({ type: 'error', message: 'From date must be before To date.' });
+                      return;
+                    }
+                    setNotice(null);
+                    setAppliedFromDate(fromDateInput.trim());
+                    setAppliedToDate(toDateInput.trim());
+                    setFilterSheetVisible(false);
+                  }}
                 >
-                  <Text style={[styles.filterChipText, selectedYear === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
+                  <Text style={styles.applyBtnText}>Apply</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.sheetLabel}>Month</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {monthOptions.map((opt) => (
                 <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.filterChip, selectedMonth === opt.value && styles.filterChipActive]}
-                  onPress={() => setSelectedMonth(opt.value)}
+                  style={styles.clearBtn}
+                  onPress={() => {
+                    setFromDateInput('');
+                    setToDateInput('');
+                    setAppliedFromDate('');
+                    setAppliedToDate('');
+                    setNotice(null);
+                  }}
                 >
-                  <Text style={[styles.filterChipText, selectedMonth === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
+                  <Text style={styles.clearBtnText}>Clear</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.sheetLabel}>Date range</Text>
-            <View style={styles.dateRow}>
-              <TouchableOpacity style={[styles.dateBtn]} onPress={() => openPicker('from')}>
-                <Text style={fromDateInput ? styles.dateText : styles.datePlaceholder}>{fromDateInput || 'From date'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.dateBtn]} onPress={() => openPicker('to')}>
-                <Text style={toDateInput ? styles.dateText : styles.datePlaceholder}>{toDateInput || 'To date'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.sheetActionRow}>
-              <TouchableOpacity
-                style={styles.applyBtn}
-                onPress={() => {
-                  if (!isValidDateString(fromDateInput) || !isValidDateString(toDateInput)) {
-                    setNotice({ type: 'error', message: 'Use YYYY-MM-DD format.' });
-                    return;
-                  }
-                  if (fromDateInput && toDateInput && new Date(fromDateInput) > new Date(toDateInput)) {
-                    setNotice({ type: 'error', message: 'From date must be before To date.' });
-                    return;
-                  }
-                  setNotice(null);
-                  setAppliedFromDate(fromDateInput.trim());
-                  setAppliedToDate(toDateInput.trim());
-                  setFilterSheetVisible(false);
-                }}
-              >
-                <Text style={styles.applyBtnText}>Apply</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.clearBtn}
-                onPress={() => {
-                  setFromDateInput('');
-                  setToDateInput('');
-                  setAppliedFromDate('');
-                  setAppliedToDate('');
-                  setNotice(null);
-                }}
-              >
-                <Text style={styles.clearBtnText}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.clearBtn} onPress={() => setFilterSheetVisible(false)}>
-                <Text style={styles.clearBtnText}>Close</Text>
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setFilterSheetVisible(false)}>
+                  <Text style={styles.clearBtnText}>Close</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      <Modal visible={Boolean(confirmVaultAction)} transparent animationType="fade">
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>{confirmVaultAction === 'delete' ? 'Delete space?' : 'Leave space?'}</Text>
-            <Text style={styles.confirmSubtitle}>
-              {confirmVaultAction === 'delete'
-                ? 'This space and all its transactions will be permanently deleted.'
-                : 'You will lose access to this space and its transactions.'}
-            </Text>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmVaultAction(null)}>
-                <Text style={styles.confirmCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmDelete}
-                onPress={handleVaultAction}
-                disabled={isActingOnVault}
-              >
-                {isActingOnVault ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.confirmDeleteText}>{confirmVaultAction === 'delete' ? 'Delete' : 'Leave'}</Text>
-                )}
-              </TouchableOpacity>
+        <Modal visible={Boolean(confirmVaultAction)} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.confirmOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.confirmCard}>
+                  <Text style={styles.confirmTitle}>{confirmVaultAction === 'delete' ? 'Delete space?' : 'Leave space?'}</Text>
+                  <Text style={styles.confirmSubtitle}>
+                    {confirmVaultAction === 'delete'
+                      ? 'This space and all its transactions will be permanently deleted.'
+                      : 'You will lose access to this space and its transactions.'}
+                  </Text>
+                  <View style={styles.confirmActions}>
+                    <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmVaultAction(null)}>
+                      <Text style={styles.confirmCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.confirmDelete}
+                      onPress={handleVaultAction}
+                      disabled={isActingOnVault}
+                    >
+                      {isActingOnVault ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.confirmDeleteText}>{confirmVaultAction === 'delete' ? 'Delete' : 'Leave'}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </TouchableWithoutFeedback>
+        </Modal>
 
-      <Modal visible={Boolean(confirmDeleteId)} transparent animationType="fade">
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>Delete transaction?</Text>
-            <Text style={styles.confirmSubtitle}>This cannot be undone.</Text>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmDeleteId(null)}>
-                <Text style={styles.confirmCancelText}>Keep it</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmDelete}
-                onPress={() => confirmDeleteId && handleDeleteConfirmed(confirmDeleteId)}
-                disabled={Boolean(isDeletingId)}
-              >
-                {isDeletingId === confirmDeleteId ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.confirmDeleteText}>Remove</Text>
-                )}
-              </TouchableOpacity>
+        <Modal visible={Boolean(confirmDeleteId)} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.confirmOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.confirmCard}>
+                  <Text style={styles.confirmTitle}>Delete transaction?</Text>
+                  <Text style={styles.confirmSubtitle}>This cannot be undone.</Text>
+                  <View style={styles.confirmActions}>
+                    <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmDeleteId(null)}>
+                      <Text style={styles.confirmCancelText}>Keep it</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.confirmDelete}
+                      onPress={() => confirmDeleteId && handleDeleteConfirmed(confirmDeleteId)}
+                      disabled={Boolean(isDeletingId)}
+                    >
+                      {isDeletingId === confirmDeleteId ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.confirmDeleteText}>Remove</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </TouchableWithoutFeedback>
+        </Modal>
 
-      <Modal visible={isInsightModalVisible} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => !insightLoading && !forecastLoading && setIsInsightModalVisible(false)}>
-          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Vault Intelligence</Text>
-              <TouchableOpacity onPress={() => setIsInsightModalVisible(false)} style={styles.modalCloseIcon}>
-                <Text style={{ fontSize: 24, color: theme.colors.textMuted }}>×</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.tabRow}>
-              <TouchableOpacity
-                style={[styles.tabBtn, activeTab === 'insights' && styles.tabBtnActive]}
-                onPress={() => { setActiveTab('insights'); if (!aiInsights) fetchAIInsights(); }}
+        <Modal visible={isInsightModalVisible} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); if (!insightLoading && !forecastLoading) setIsInsightModalVisible(false); }}>
+            <View style={styles.modalOverlay}>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ width: '100%', alignItems: 'center' }}
               >
-                <Text style={[styles.tabText, activeTab === 'insights' && styles.tabTextActive]}>✨ Insights</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabBtn, activeTab === 'forecast' && styles.tabBtnActive]}
-                onPress={() => { setActiveTab('forecast'); setForecastData(null); fetchForecast(); }}
-              >
-                <Text style={[styles.tabText, activeTab === 'forecast' && styles.tabTextActive]}>📈 Forecast</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabBtn, activeTab === 'chat' && styles.tabBtnActive]}
-                onPress={() => { setActiveTab('chat'); }}
-              >
-                <Text style={[styles.tabText, activeTab === 'chat' && styles.tabTextActive]}>💬 Chat</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activeTab === 'chat' ? (
-              <View style={{ flex: 1 }}>
-                {chatMessages.length === 0 && (
-                  <View style={{ padding: 16 }}>
-                    <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 12, textAlign: 'center' }}>
-                      Ask anything about your expenses! 🤖
-                    </Text>
-                    {['Who spent the most?', 'How much on food?', 'Total this month?'].map(q => (
-                      <TouchableOpacity
-                        key={q}
-                        style={styles.chatSuggestion}
-                        onPress={() => { setChatInput(q); }}
-                      >
-                        <Text style={styles.chatSuggestionText}>{q}</Text>
+                <TouchableWithoutFeedback>
+                  <View style={[styles.modalCard, { maxHeight: '85%', maxWidth: 640, width: '100%', alignSelf: 'center' }]}>
+                    <View style={styles.modalHeaderRow}>
+                      <Text style={styles.modalTitle}>Vault Intelligence</Text>
+                      <TouchableOpacity onPress={() => setIsInsightModalVisible(false)} style={styles.modalCloseIcon}>
+                        <Text style={{ fontSize: 24, color: theme.colors.textMuted }}>×</Text>
                       </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.tabRow}>
+                      <TouchableOpacity
+                        style={[styles.tabBtn, activeTab === 'insights' && styles.tabBtnActive]}
+                        onPress={() => { setActiveTab('insights'); if (!aiInsights) fetchAIInsights(); }}
+                      >
+                        <Text style={[styles.tabText, activeTab === 'insights' && styles.tabTextActive]}>✨ Insights</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.tabBtn, activeTab === 'forecast' && styles.tabBtnActive]}
+                        onPress={() => { setActiveTab('forecast'); setForecastData(null); fetchForecast(); }}
+                      >
+                        <Text style={[styles.tabText, activeTab === 'forecast' && styles.tabTextActive]}>📈 Forecast</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.tabBtn, activeTab === 'chat' && styles.tabBtnActive]}
+                        onPress={() => { setActiveTab('chat'); }}
+                      >
+                        <Text style={[styles.tabText, activeTab === 'chat' && styles.tabTextActive]}>💬 Chat</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {activeTab === 'chat' ? (
+                      <View style={{ flex: 1 }}>
+                        {chatMessages.length === 0 && (
+                          <View style={{ padding: 16 }}>
+                            <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 12, textAlign: 'center' }}>
+                              Ask anything about your expenses! 🤖
+                            </Text>
+                            {['Who spent the most?', 'How much on food?', 'Total this month?'].map(q => (
+                              <TouchableOpacity
+                                key={q}
+                                style={styles.chatSuggestion}
+                                onPress={() => { setChatInput(q); }}
+                              >
+                                <Text style={styles.chatSuggestionText}>{q}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                        <ScrollView
+                          ref={chatScrollRef}
+                          style={{ flex: 1, maxHeight: 320 }}
+                          contentContainerStyle={{ padding: 12, gap: 10 }}
+                          showsVerticalScrollIndicator={false}
+                          keyboardShouldPersistTaps="handled"
+                        >
+                          {chatMessages.map((msg, i) => (
+                            <View
+                              key={`chat-${i}`}
+                              style={[
+                                styles.chatBubble,
+                                msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAI
+                              ]}
+                            >
+                              <MarkdownText
+                                content={msg.text}
+                                theme={theme}
+                                textStyle={msg.role === 'user' ? { color: '#fff' } : undefined}
+                              />
+                            </View>
+                          ))}
+                          {isChatLoading && (
+                            <View style={styles.chatBubbleAI}>
+                              <ActivityIndicator size="small" color={theme.colors.brand} />
+                            </View>
+                          )}
+                        </ScrollView>
+                        <View style={styles.chatInputRow}>
+                          <TextInput
+                            style={styles.chatInput}
+                            placeholder="Ask about your expenses..."
+                            placeholderTextColor={theme.colors.textMuted}
+                            value={chatInput}
+                            onChangeText={setChatInput}
+                            onSubmitEditing={sendChatMessage}
+                            returnKeyType="send"
+                            multiline={false}
+                          />
+                          <TouchableOpacity
+                            style={[styles.chatSendBtn, (!chatInput.trim() || isChatLoading) && { opacity: 0.5 }]}
+                            onPress={sendChatMessage}
+                            disabled={!chatInput.trim() || isChatLoading}
+                          >
+                            <Text style={styles.chatSendText}>↑</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (activeTab === 'insights' ? insightLoading : forecastLoading) ? (
+                      <View style={{ padding: 40, alignItems: 'center' }}>
+                        <ActivityIndicator color={theme.colors.brand} size="large" />
+                        <Text style={{ marginTop: 12, color: theme.colors.textMuted, textAlign: 'center' }}>
+                          {activeTab === 'insights' ? 'AI is analyzing your spending...' : 'Predicting future spending trends...'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled">
+                        <MarkdownText content={(activeTab === 'insights' ? aiInsights : forecastData) || ''} theme={theme} />
+                        <TouchableOpacity
+                          style={[styles.modalSaveBtn, { marginTop: 24, alignSelf: 'center', width: '100%' }]}
+                          onPress={() => setIsInsightModalVisible(false)}
+                        >
+                          <Text style={styles.modalSaveText}>Done</Text>
+                        </TouchableOpacity>
+                      </ScrollView>
+                    )}
+                  </View>
+                </TouchableWithoutFeedback>
+              </KeyboardAvoidingView>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+
+        <Modal visible={pickerVisible} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.confirmOverlay}>
+              <TouchableWithoutFeedback>
+                <View style={styles.calendarCard}>
+                  <Text style={styles.confirmTitle}>{pickerTarget === 'from' ? 'From date' : 'To date'}</Text>
+                  <Text style={styles.calendarHint}>Pick a day from the calendar</Text>
+
+                  <View style={styles.calendarHeader}>
+                    <TouchableOpacity
+                      style={styles.calendarNavBtn}
+                      onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                    >
+                      <Text style={styles.calendarNavText}>‹</Text>
+                    </TouchableOpacity>
+
+                    <Text style={styles.calendarMonthTitle}>
+                      {pickerMonth.toLocaleString(undefined, { month: 'long' })} {pickerMonth.getFullYear()}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={styles.calendarNavBtn}
+                      onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                    >
+                      <Text style={styles.calendarNavText}>›</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                    {calendarMonthOptions.map((label, idx) => {
+                      const selected = idx === pickerMonth.getMonth();
+                      return (
+                        <TouchableOpacity
+                          key={label}
+                          style={[styles.filterChip, selected && styles.filterChipActive]}
+                          onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), idx, 1))}
+                        >
+                          <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+                    {calendarYearOptions.map((year) => {
+                      const selected = year === pickerMonth.getFullYear();
+                      return (
+                        <TouchableOpacity
+                          key={String(year)}
+                          style={[styles.filterChip, selected && styles.filterChipActive]}
+                          onPress={() => setPickerMonth((prev) => new Date(year, prev.getMonth(), 1))}
+                        >
+                          <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{year}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={styles.weekRow}>
+                    {weekLabels.map((w) => (
+                      <Text key={w} style={styles.weekLabel}>
+                        {w}
+                      </Text>
                     ))}
                   </View>
-                )}
-                <ScrollView
-                  ref={chatScrollRef}
-                  style={{ flex: 1, maxHeight: 320 }}
-                  contentContainerStyle={{ padding: 12, gap: 10 }}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {chatMessages.map((msg, i) => (
-                    <View
-                      key={`chat-${i}`}
-                      style={[
-                        styles.chatBubble,
-                        msg.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAI
-                      ]}
+
+                  <View style={styles.dayGrid}>
+                    {calendarDays.map((item) => {
+                      const ymd = formatDateToYmd(item.date);
+                      const targetValue = pickerTarget === 'from' ? fromDateInput : toDateInput;
+                      const isSelected = ymd === targetValue;
+                      const isToday = ymd === todayYmd;
+                      return (
+                        <TouchableOpacity
+                          key={item.key}
+                          style={[
+                            styles.dayCell,
+                            !item.inMonth && styles.dayCellMuted,
+                            isToday && styles.dayCellToday,
+                            isSelected && styles.dayCellSelected,
+                          ]}
+                          onPress={() => {
+                            if (pickerTarget === 'from') setFromDateInput(ymd);
+                            else setToDateInput(ymd);
+                            setPickerVisible(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dayText,
+                              !item.inMonth && styles.dayTextMuted,
+                              isToday && styles.dayTextToday,
+                              isSelected && styles.dayTextSelected,
+                            ]}
+                          >
+                            {item.date.getDate()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.confirmActions}>
+                    <TouchableOpacity
+                      style={styles.confirmCancel}
+                      onPress={() => {
+                        if (pickerTarget === 'from') setFromDateInput('');
+                        else setToDateInput('');
+                        setPickerVisible(false);
+                      }}
                     >
-                      <MarkdownText
-                        content={msg.text}
-                        theme={theme}
-                        textStyle={msg.role === 'user' ? { color: '#fff' } : undefined}
-                      />
-                    </View>
-                  ))}
-                  {isChatLoading && (
-                    <View style={styles.chatBubbleAI}>
-                      <ActivityIndicator size="small" color={theme.colors.brand} />
-                    </View>
-                  )}
-                </ScrollView>
-                <View style={styles.chatInputRow}>
-                  <TextInput
-                    style={styles.chatInput}
-                    placeholder="Ask about your expenses..."
-                    placeholderTextColor={theme.colors.textMuted}
-                    value={chatInput}
-                    onChangeText={setChatInput}
-                    onSubmitEditing={sendChatMessage}
-                    returnKeyType="send"
-                    multiline={false}
-                  />
-                  <TouchableOpacity
-                    style={[styles.chatSendBtn, (!chatInput.trim() || isChatLoading) && { opacity: 0.5 }]}
-                    onPress={sendChatMessage}
-                    disabled={!chatInput.trim() || isChatLoading}
-                  >
-                    <Text style={styles.chatSendText}>↑</Text>
-                  </TouchableOpacity>
+                      <Text style={styles.confirmCancelText}>Clear</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.confirmDelete} onPress={() => setPickerVisible(false)}>
+                      <Text style={styles.confirmDeleteText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ) : (activeTab === 'insights' ? insightLoading : forecastLoading) ? (
-              <View style={{ padding: 40, alignItems: 'center' }}>
-                <ActivityIndicator color={theme.colors.brand} size="large" />
-                <Text style={{ marginTop: 12, color: theme.colors.textMuted, textAlign: 'center' }}>
-                  {activeTab === 'insights' ? 'AI is analyzing your spending...' : 'Predicting future spending trends...'}
-                </Text>
-              </View>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                <MarkdownText content={(activeTab === 'insights' ? aiInsights : forecastData) || ''} theme={theme} />
-                <TouchableOpacity
-                  style={[styles.modalSaveBtn, { marginTop: 24, alignSelf: 'center', width: '100%' }]}
-                  onPress={() => setIsInsightModalVisible(false)}
-                >
-                  <Text style={styles.modalSaveText}>Done</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            )}
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={pickerVisible} transparent animationType="fade">
-        <View style={styles.confirmOverlay}>
-          <View style={styles.calendarCard}>
-            <Text style={styles.confirmTitle}>{pickerTarget === 'from' ? 'From date' : 'To date'}</Text>
-            <Text style={styles.calendarHint}>Pick a day from the calendar</Text>
-
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity
-                style={styles.calendarNavBtn}
-                onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-              >
-                <Text style={styles.calendarNavText}>‹</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.calendarMonthTitle}>
-                {pickerMonth.toLocaleString(undefined, { month: 'long' })} {pickerMonth.getFullYear()}
-              </Text>
-
-              <TouchableOpacity
-                style={styles.calendarNavBtn}
-                onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-              >
-                <Text style={styles.calendarNavText}>›</Text>
-              </TouchableOpacity>
+              </TouchableWithoutFeedback>
             </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {calendarMonthOptions.map((label, idx) => {
-                const selected = idx === pickerMonth.getMonth();
-                return (
-                  <TouchableOpacity
-                    key={label}
-                    style={[styles.filterChip, selected && styles.filterChipActive]}
-                    onPress={() => setPickerMonth((prev) => new Date(prev.getFullYear(), idx, 1))}
-                  >
-                    <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {calendarYearOptions.map((year) => {
-                const selected = year === pickerMonth.getFullYear();
-                return (
-                  <TouchableOpacity
-                    key={String(year)}
-                    style={[styles.filterChip, selected && styles.filterChipActive]}
-                    onPress={() => setPickerMonth((prev) => new Date(year, prev.getMonth(), 1))}
-                  >
-                    <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>{year}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <View style={styles.weekRow}>
-              {weekLabels.map((w) => (
-                <Text key={w} style={styles.weekLabel}>
-                  {w}
-                </Text>
-              ))}
-            </View>
-
-            <View style={styles.dayGrid}>
-              {calendarDays.map((item) => {
-                const ymd = formatDateToYmd(item.date);
-                const targetValue = pickerTarget === 'from' ? fromDateInput : toDateInput;
-                const isSelected = ymd === targetValue;
-                const isToday = ymd === todayYmd;
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[
-                      styles.dayCell,
-                      !item.inMonth && styles.dayCellMuted,
-                      isToday && styles.dayCellToday,
-                      isSelected && styles.dayCellSelected,
-                    ]}
-                    onPress={() => {
-                      if (pickerTarget === 'from') setFromDateInput(ymd);
-                      else setToDateInput(ymd);
-                      setPickerVisible(false);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.dayText,
-                        !item.inMonth && styles.dayTextMuted,
-                        isToday && styles.dayTextToday,
-                        isSelected && styles.dayTextSelected,
-                      ]}
-                    >
-                      {item.date.getDate()}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.confirmCancel}
-                onPress={() => {
-                  if (pickerTarget === 'from') setFromDateInput('');
-                  else setToDateInput('');
-                  setPickerVisible(false);
-                }}
-              >
-                <Text style={styles.confirmCancelText}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmDelete} onPress={() => setPickerVisible(false)}>
-                <Text style={styles.confirmDeleteText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -1858,8 +1900,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    padding: 16,
+    padding: 24,
     ...shadows.float,
+    maxWidth: 580,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalTitle: {
     color: theme.colors.textPrimary,
@@ -2042,8 +2087,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 24,
     ...shadows.float,
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
   },
   confirmTitle: {
     color: theme.colors.textPrimary,
@@ -2092,8 +2140,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: '#FFFFFF',
-    padding: 14,
+    padding: 20,
     ...shadows.float,
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
   },
   calendarHint: {
     marginTop: 5,

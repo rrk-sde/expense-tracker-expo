@@ -35,9 +35,22 @@ export const theme = {
     xxl: 44,
   },
   typography: {
-    display: Platform.select({ ios: 'Avenir Next', android: 'serif', default: 'Trebuchet MS' }),
-    body: Platform.select({ ios: 'Avenir', android: 'sans-serif', default: 'Verdana' }),
-    mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    // Inter is loaded via google fonts on web; falls back to system fonts on native
+    display: Platform.select({
+      ios: 'System',
+      android: 'sans-serif-medium',
+      default: 'Outfit, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+    }),
+    body: Platform.select({
+      ios: 'System',
+      android: 'sans-serif',
+      default: 'Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+    }),
+    mono: Platform.select({
+      ios: 'Menlo',
+      android: 'monospace',
+      default: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    }),
   },
 };
 
