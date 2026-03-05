@@ -885,6 +885,7 @@ export default function LiveTransactionList({
                           value={quickAddText}
                           onChangeText={setQuickAddText}
                           onSubmitEditing={handleQuickAdd}
+                          returnKeyType="go"
                         />
                         <TouchableOpacity
                           style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
@@ -894,7 +895,12 @@ export default function LiveTransactionList({
                           {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
                         </TouchableOpacity>
                       </View>
-                      <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+                      <View style={styles.quickAddFooterRow}>
+                        <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+                        <TouchableOpacity style={styles.scanReceiptBtn} onPress={handleScanReceipt}>
+                          <Text style={styles.scanReceiptBtnText}>📷 Scan Receipt</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     <View style={styles.filterCard}>
@@ -1848,11 +1854,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   quickAddHint: {
-    marginTop: 8,
     fontSize: 11,
     color: theme.colors.textMuted,
     fontFamily: theme.typography.body,
     opacity: 0.8,
+    flex: 1,
+  },
+  quickAddFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  scanReceiptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF5EF',
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  scanReceiptBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.brand,
+    fontFamily: theme.typography.body,
   },
   tabRow: {
     flexDirection: 'row',
