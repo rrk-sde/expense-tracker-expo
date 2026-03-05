@@ -15,6 +15,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
+import Markdown from 'react-native-markdown-display';
 
 import { shadows, theme } from '../theme';
 
@@ -80,7 +82,7 @@ export default function VaultList({
   const [joinCode, setJoinCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
-  const [actionMode, setActionMode] = useState<'create' | 'join' | 'freeform'>('create');
+  const [actionMode, setActionMode] = useState<'create' | 'join' | 'freeform'>('freeform');
   const [freeformText, setFreeformText] = useState('');
   const [isProcessingFreeform, setIsProcessingFreeform] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
@@ -97,6 +99,7 @@ export default function VaultList({
   const [editingVaultName, setEditingVaultName] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
 
+  const queryClient = useQueryClient();
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
   const templates = ['Trip', 'Flat', 'Family', 'Office', 'Groceries'];
@@ -170,13 +173,16 @@ export default function VaultList({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to process request');
 
-      if (data.type === 'SUCCESS') {
-        setFeedback({ type: 'success', message: data.message });
+      if (data.type === 'SUCCESS' || data.type === 'ANSWER') {
+        const rawMsg = data.type === 'SUCCESS' ? data.message : data.answer;
+        setFeedback({ type: 'success', message: rawMsg || '' });
         setFreeformText('');
-        loadVaults(); // Refresh spaces
+        loadVaults(); // Refresh spaces & summary
         if (data.feed) addFeed(data.feed);
-      } else if (data.type === 'ANSWER') {
-        setFeedback({ type: 'success', message: data.answer });
+
+        // Refresh all potentially cached transactions in spaces
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['summary'] });
       }
     } catch (e: any) {
       setFeedback({ type: 'error', message: e.message });
@@ -538,7 +544,43 @@ export default function VaultList({
                     </View>
                   </View>
 
-                  {feedback && <Text style={feedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>{feedback.message}</Text>}
+                  {feedback && (
+                    <View style={[
+                      styles.feedbackBox,
+                      feedback.type === 'error' ? styles.feedbackBoxError : styles.feedbackBoxSuccess
+                    ]}>
+                      <Text style={styles.feedbackEmoji}>{feedback.type === 'error' ? '⚠️' : '✨'}</Text>
+                      {feedback.type === 'error' ? (
+                        <Text style={styles.feedbackError}>{feedback.message}</Text>
+                      ) : (
+                        <View style={{ flex: 1 }}>
+                          <Markdown
+                            style={{
+                              body: {
+                                color: theme.colors.brandStrong,
+                                fontFamily: theme.typography.body,
+                                fontSize: 13.5,
+                                fontWeight: '600',
+                                lineHeight: 18,
+                              },
+                              strong: {
+                                fontWeight: '800',
+                                color: theme.colors.brand,
+                              },
+                              bullet_list: {
+                                marginTop: 4,
+                              },
+                              list_item: {
+                                marginBottom: 2,
+                              },
+                            }}
+                          >
+                            {feedback.message}
+                          </Markdown>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   {actionMode === 'create' && (
                     <View style={styles.templateRow}>
@@ -903,16 +945,38 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.body,
   },
   feedbackError: {
-    marginTop: 8,
     color: theme.colors.danger,
     fontFamily: theme.typography.body,
-    fontSize: 13,
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
   },
   feedbackSuccess: {
-    marginTop: 8,
-    color: theme.colors.success,
+    color: theme.colors.brandStrong,
     fontFamily: theme.typography.body,
-    fontSize: 13,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+    flex: 1,
+  },
+  feedbackBox: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: theme.radius.md,
+    flexDirection: 'row',
+    gap: 12,
+    borderWidth: 1.5,
+  },
+  feedbackBoxError: {
+    backgroundColor: '#FFF5F5',
+    borderColor: '#FED7D7',
+  },
+  feedbackBoxSuccess: {
+    backgroundColor: '#F0F9F4',
+    borderColor: '#D1EAD9',
+  },
+  feedbackEmoji: {
+    fontSize: 18,
   },
   templateRow: {
     marginTop: 8,
