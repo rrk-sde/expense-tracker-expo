@@ -18,9 +18,11 @@ import {
 
 import { shadows, theme } from '../theme';
 
-const API_BASE_URL = Platform.OS === 'web' && typeof globalThis !== 'undefined'
-  ? `http://${globalThis.location.hostname}:4000`
-  : (process.env.EXPO_PUBLIC_API_URL || '');
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (
+  Platform.OS === 'web' && typeof globalThis !== 'undefined' && (globalThis.location.hostname === 'localhost' || globalThis.location.hostname === '127.0.0.1')
+    ? `http://${globalThis.location.hostname}:4000`
+    : ''
+);
 
 type Space = {
   id: string;
