@@ -993,15 +993,17 @@ export default function LiveTransactionList({
               )
             }
             ListFooterComponent={
-              <View style={styles.footerLoad}>
-                {hasNextPage ? (
-                  isFetchingNextPage ? (
-                    <ActivityIndicator color={theme.colors.brand} />
+              <View style={[styles.footerLoad, { marginBottom: 40 }]}>
+                {isLoading ? null : (
+                  hasNextPage ? (
+                    isFetchingNextPage ? (
+                      <ActivityIndicator color={theme.colors.brand} />
+                    ) : (
+                      <Text style={styles.footerHint}>Scroll for more</Text>
+                    )
                   ) : (
-                    <Text style={styles.footerHint}>Scroll for more</Text>
+                    transactions.length > 0 && <Text style={styles.footerHint}>End of list</Text>
                   )
-                ) : (
-                  <Text style={styles.footerHint}>End of list</Text>
                 )}
               </View>
             }
