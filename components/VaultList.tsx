@@ -80,7 +80,9 @@ export default function VaultList({
   const [joinCode, setJoinCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
-  const [actionMode, setActionMode] = useState<'create' | 'join'>('create');
+  const [actionMode, setActionMode] = useState<'create' | 'join' | 'freeform'>('create');
+  const [freeformText, setFreeformText] = useState('');
+  const [isProcessingFreeform, setIsProcessingFreeform] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [recentFeed, setRecentFeed] = useState<FeedItem[]>([]);
   const [feedExpanded, setFeedExpanded] = useState(false);
@@ -101,7 +103,8 @@ export default function VaultList({
 
   const canCreate = Boolean(newVaultName.trim()) && !isCreating;
   const canJoin = Boolean(joinCode.trim()) && !isJoining;
-  const isPrimaryEnabled = (actionMode === 'create' && canCreate) || (actionMode === 'join' && canJoin);
+  const canFreeform = Boolean(freeformText.trim()) && !isProcessingFreeform;
+  const isPrimaryEnabled = (actionMode === 'create' && canCreate) || (actionMode === 'join' && canJoin) || (actionMode === 'freeform' && canFreeform);
 
   const addFeed = (text: string) => {
     const now = new Date();
@@ -151,6 +154,34 @@ export default function VaultList({
       console.error('Failed to fetch members', e);
     } finally {
       setMembersLoading(false);
+    }
+  };
+
+  const handleFreeform = async () => {
+    if (!freeformText.trim() || isProcessingFreeform) return;
+    setIsProcessingFreeform(true);
+    setFeedback(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/freeform`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, text: freeformText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to process request');
+
+      if (data.type === 'SUCCESS') {
+        setFeedback({ type: 'success', message: data.message });
+        setFreeformText('');
+        loadVaults(); // Refresh spaces
+        if (data.feed) addFeed(data.feed);
+      } else if (data.type === 'ANSWER') {
+        setFeedback({ type: 'success', message: data.answer });
+      }
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: e.message });
+    } finally {
+      setIsProcessingFreeform(false);
     }
   };
 
@@ -438,26 +469,46 @@ export default function VaultList({
                 <View style={styles.composerCard}>
                   <View style={styles.segmented}>
                     <TouchableOpacity style={[styles.segmentBtn, actionMode === 'create' && styles.segmentBtnActive]} onPress={() => setActionMode('create')}>
-                      <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create space</Text>
+                      <Text style={[styles.segmentText, actionMode === 'create' && styles.segmentTextActive]}>Create</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.segmentBtn, actionMode === 'join' && styles.segmentBtnActive]} onPress={() => setActionMode('join')}>
-                      <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join space</Text>
+                      <Text style={[styles.segmentText, actionMode === 'join' && styles.segmentTextActive]}>Join</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.segmentBtn, actionMode === 'freeform' && styles.segmentBtnActive]} onPress={() => setActionMode('freeform')}>
+                      <Text style={[styles.segmentText, actionMode === 'freeform' && styles.segmentTextActive]}>FreeForm ✨</Text>
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.composerBody}>
                     <Text style={styles.composerLabel}>
-                      {actionMode === 'create' ? 'Space Name' : 'Invite Code'}
+                      {actionMode === 'create' ? 'Space Name' : actionMode === 'join' ? 'Invite Code' : 'Try "Spent 200 on milk in Groceries"'}
                     </Text>
                     <View style={styles.composerRow}>
                       <TextInput
                         style={styles.composerInput}
-                        placeholder={actionMode === 'create' ? 'e.g. Goa Trip 2024' : 'XXXX-XXXX'}
+                        placeholder={
+                          actionMode === 'create' ? 'e.g. Goa Trip 2024' :
+                            actionMode === 'join' ? 'XXXX-XXXX' :
+                              'Ask anything or add an expense...'
+                        }
                         placeholderTextColor={theme.colors.textMuted}
-                        value={actionMode === 'create' ? newVaultName : joinCode}
-                        onChangeText={actionMode === 'create' ? setNewVaultName : setJoinCode}
-                        onSubmitEditing={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
-                        autoCapitalize={actionMode === 'create' ? 'words' : 'characters'}
+                        value={
+                          actionMode === 'create' ? newVaultName :
+                            actionMode === 'join' ? joinCode :
+                              freeformText
+                        }
+                        onChangeText={
+                          actionMode === 'create' ? setNewVaultName :
+                            actionMode === 'join' ? setJoinCode :
+                              setFreeformText
+                        }
+                        onSubmitEditing={
+                          actionMode === 'create' ? () => createVault(newVaultName) :
+                            actionMode === 'join' ? joinVault :
+                              handleFreeform
+                        }
+                        autoCapitalize={actionMode === 'join' ? 'characters' : 'sentences'}
+                        multiline={actionMode === 'freeform'}
                       />
 
                       <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
@@ -465,15 +516,22 @@ export default function VaultList({
                           style={[
                             styles.composerBtn,
                             actionMode === 'join' && styles.composerBtnJoin,
+                            actionMode === 'freeform' && styles.composerBtnFreeform,
                             !isPrimaryEnabled && styles.composerBtnDisabled,
                           ]}
-                          onPress={actionMode === 'create' ? () => createVault(newVaultName) : joinVault}
+                          onPress={
+                            actionMode === 'create' ? () => createVault(newVaultName) :
+                              actionMode === 'join' ? joinVault :
+                                handleFreeform
+                          }
                           disabled={!isPrimaryEnabled}
                         >
-                          {(actionMode === 'create' && isCreating) || (actionMode === 'join' && isJoining) ? (
+                          {isCreating || isJoining || isProcessingFreeform ? (
                             <ActivityIndicator color="#fff" />
                           ) : (
-                            <Text style={styles.composerBtnText}>{actionMode === 'create' ? 'Create' : 'Join'}</Text>
+                            <Text style={styles.composerBtnText}>
+                              {actionMode === 'create' ? 'Create' : actionMode === 'join' ? 'Join' : 'Go'}
+                            </Text>
                           )}
                         </TouchableOpacity>
                       </Animated.View>
@@ -825,6 +883,10 @@ const styles = StyleSheet.create({
   composerBtnJoin: {
     backgroundColor: '#0F6A40',
     borderColor: '#0A5733',
+  },
+  composerBtnFreeform: {
+    backgroundColor: '#6366F1',
+    borderColor: '#4F46E5',
   },
   composerBtnDisabled: {
     opacity: 1,
