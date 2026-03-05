@@ -310,36 +310,41 @@ export default function VaultList({
                     onSubmitEditing={() => renameVault(item.id)}
                     returnKeyType="done"
                     maxLength={60}
+                    placeholder="New name..."
                   />
-                  <TouchableOpacity
-                    style={styles.renameSaveBtn}
-                    onPress={() => renameVault(item.id)}
-                    disabled={isRenaming}
-                  >
-                    {isRenaming
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={styles.renameSaveBtnText}>Save</Text>
-                    }
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.renameCancelBtn}
-                    onPress={() => setEditingVaultId(null)}
-                  >
-                    <Text style={styles.renameCancelBtnText}>✕</Text>
-                  </TouchableOpacity>
+                  <View style={styles.renameActions}>
+                    <TouchableOpacity
+                      style={styles.renameSaveBtn}
+                      onPress={() => renameVault(item.id)}
+                      disabled={isRenaming}
+                    >
+                      {isRenaming
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={styles.renameSaveBtnText}>Save</Text>
+                      }
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.renameCancelBtn}
+                      onPress={() => setEditingVaultId(null)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <Text style={styles.renameCancelBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
                   <Text style={[styles.spaceTitle, { flex: 1 }]}>{item.name}</Text>
                   <TouchableOpacity
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     onPress={(e) => {
                       e.stopPropagation();
                       setEditingVaultId(item.id);
                       setEditingVaultName(item.name);
                     }}
+                    style={styles.pencilBtn}
                   >
-                    <Text style={styles.pencilIcon}>✎</Text>
+                    <Text style={styles.pencilIcon}>Edit</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1162,53 +1167,65 @@ const styles = StyleSheet.create({
     color: theme.colors.brandStrong,
     fontFamily: theme.typography.body,
   },
+  pencilBtn: {
+    backgroundColor: '#F3F8F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: '#DCEBDF',
+  },
   pencilIcon: {
-    fontSize: 16,
+    fontSize: 11,
     color: theme.colors.brandStrong,
-    opacity: 0.6,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   renameInput: {
     flex: 1,
     borderWidth: 1.5,
     borderColor: theme.colors.brand,
     borderRadius: theme.radius.md,
-    backgroundColor: '#F2FAF5',
+    backgroundColor: '#F8FDFB',
     color: theme.colors.textPrimary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     fontFamily: theme.typography.body,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
-    minHeight: 36,
+    minHeight: 44,
+  },
+  renameActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   renameSaveBtn: {
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.brand,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 32,
+    ...shadows.float,
   },
   renameSaveBtnText: {
     color: '#fff',
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: theme.typography.body,
   },
   renameCancelBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#FDF1F0',
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
   renameCancelBtnText: {
-    color: theme.colors.danger,
-    fontWeight: '800',
+    color: theme.colors.textMuted,
+    fontWeight: '700',
     fontSize: 14,
+    fontFamily: theme.typography.body,
   },
 });
