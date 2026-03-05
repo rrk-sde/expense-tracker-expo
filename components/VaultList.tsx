@@ -614,7 +614,7 @@ export default function VaultList({
           <Text style={styles.bottomDot}>•</Text>
           <Text style={styles.bottomText}>₹{Number(summary.totalAmount7d || 0).toFixed(0)} this week</Text>
           <Text style={styles.bottomDot}>•</Text>
-          <Text style={styles.bottomText}>{summary.activeSpaces || 0} active</Text>
+          <Text style={styles.bottomText}>{summary.activeSpaces || 0} active spaces</Text>
         </View>
       )}
 

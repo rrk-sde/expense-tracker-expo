@@ -832,7 +832,9 @@ export default function LiveTransactionList({
               </TouchableOpacity>
               <View style={styles.presenceBadge}>
                 <View style={styles.presenceDot} />
-                <Text style={styles.presenceText}>{activeUsers} active</Text>
+                <Text style={styles.presenceText}>
+                  {activeUsers === 1 ? '1 person online' : `${activeUsers} people online`}
+                </Text>
               </View>
             </View>
           </View>
