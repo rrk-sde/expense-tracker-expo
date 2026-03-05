@@ -52,7 +52,9 @@ interface TransactionPage {
   totalCount: number;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
+const API_BASE_URL = Platform.OS === 'web' && typeof globalThis !== 'undefined'
+  ? `http://${globalThis.location.hostname}:4000`
+  : (process.env.EXPO_PUBLIC_API_URL || '');
 const PAGE_SIZE = 30;
 
 const monthOptions = [
@@ -672,7 +674,15 @@ export default function LiveTransactionList({
         setNotice({ type: 'success', message: `AI Scanned: ${parsed.category || 'Receipt'}` });
       }
     } catch (e: any) {
-      setNotice({ type: 'error', message: e.message || 'Scanning error' });
+      // Show clean message — never dump raw JSON to the user
+      const msg: string = e.message || 'Scanning error';
+      const isRateLimit = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
+      setNotice({
+        type: 'error',
+        message: isRateLimit
+          ? '⏳ AI scanning quota reached. Please wait a minute and try again.'
+          : msg.startsWith('{') ? 'Scanning failed. Please try again.' : msg,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -919,7 +929,7 @@ export default function LiveTransactionList({
                           <Text style={styles.filterOpenBtnText}>Filters</Text>
                         </TouchableOpacity>
                         <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
-                        {(appliedFromDate || appliedToDate) && (
+                        {Boolean(appliedFromDate || appliedToDate) && (
                           <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
                         )}
                       </View>
