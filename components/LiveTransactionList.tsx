@@ -966,11 +966,13 @@ export default function LiveTransactionList({
             }
           />
 
-          <View style={[styles.fabWrap, { right: fabPadH }]}>
-            <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
-              <Text style={styles.fabBtnText}>+</Text>
-            </TouchableOpacity>
-          </View>
+          {!isModalVisible && !isInsightModalVisible && !filterSheetVisible && (
+            <View style={[styles.fabWrap, { right: fabPadH }]}>
+              <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
+                <Text style={styles.fabBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         <Modal visible={isModalVisible} transparent animationType="slide">
@@ -978,7 +980,7 @@ export default function LiveTransactionList({
             <View style={styles.modalOverlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={{ width: '100%', alignItems: 'center' }}
+                style={{ width: '100%', alignItems: 'center', flexShrink: 1, maxHeight: '100%' }}
               >
                 <TouchableWithoutFeedback>
                   <View style={styles.modalCard}>
@@ -1236,10 +1238,10 @@ export default function LiveTransactionList({
             <View style={styles.modalOverlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={{ width: '100%', alignItems: 'center' }}
+                style={{ width: '100%', alignItems: 'center', flexShrink: 1, maxHeight: '100%' }}
               >
                 <TouchableWithoutFeedback>
-                  <View style={[styles.modalCard, { maxHeight: '85%', maxWidth: 640, width: '100%', alignSelf: 'center' }]}>
+                  <View style={[styles.modalCard, { maxHeight: '85%', maxWidth: 640, width: '100%', alignSelf: 'center', flexShrink: 1 }]}>
                     <View style={styles.modalHeaderRow}>
                       <Text style={styles.modalTitle}>Vault Intelligence</Text>
                       <TouchableOpacity onPress={() => setIsInsightModalVisible(false)} style={styles.modalCloseIcon}>
@@ -1953,6 +1955,7 @@ const styles = StyleSheet.create({
     maxWidth: 580,
     width: '100%',
     alignSelf: 'center',
+    flexShrink: 1,
   },
   modalTitle: {
     color: theme.colors.textPrimary,
