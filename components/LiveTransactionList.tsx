@@ -246,7 +246,10 @@ export default function LiveTransactionList({
 
   const [activeUsers, setActiveUsers] = useState<number>(1);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    type: 'leave_vault' | 'delete_vault' | 'delete_txn';
+    txnId?: string;
+  } | null>(null);
   const [txnTitle, setTxnTitle] = useState('');
   const [txnType, setTxnType] = useState<'DR' | 'CR'>('DR');
   const [amountStr, setAmountStr] = useState('');
@@ -255,8 +258,6 @@ export default function LiveTransactionList({
   const [expandedTxnId, setExpandedTxnId] = useState<string | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
-
-  const [confirmVaultAction, setConfirmVaultAction] = useState<'leave' | 'delete' | null>(null);
   const [isActingOnVault, setIsActingOnVault] = useState(false);
 
   const [searchInput, setSearchInput] = useState('');
@@ -605,6 +606,8 @@ export default function LiveTransactionList({
     }
   };
 
+
+
   const handleDeleteConfirmed = async (transactionId: string) => {
     setNotice(null);
     setIsDeletingId(transactionId);
@@ -620,8 +623,9 @@ export default function LiveTransactionList({
         return;
       }
 
-      const title = (payload as any)?.title || 'Transaction';
-      const amount = (payload as any)?.amount || '0';
+      const deletedTxn = payload as { title?: string; amount?: number };
+      const title = deletedTxn.title || 'Transaction';
+      const amount = deletedTxn.amount || '0';
       addFeed(`Removed: ${title} (₹${amount})`);
       setNotice({ type: 'success', message: 'Transaction removed' });
       queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
@@ -630,18 +634,19 @@ export default function LiveTransactionList({
       setNotice({ type: 'error', message: e.message || 'Network error' });
     } finally {
       setIsDeletingId(null);
-      setConfirmDeleteId(null);
+      setConfirmState(null);
     }
   };
 
   const handleVaultAction = async () => {
-    if (!confirmVaultAction) return;
+    if (!confirmState || (confirmState.type !== 'delete_vault' && confirmState.type !== 'leave_vault')) return;
+    const actionType = confirmState.type;
     setNotice(null);
     setIsActingOnVault(true);
 
     try {
-      const endpoint = confirmVaultAction === 'delete' ? `/api/vaults/${vaultId}` : `/api/vaults/${vaultId}/leave`;
-      const method = confirmVaultAction === 'delete' ? 'DELETE' : 'POST';
+      const endpoint = actionType === 'delete_vault' ? `/api/vaults/${vaultId}` : `/api/vaults/${vaultId}/leave`;
+      const method = actionType === 'delete_vault' ? 'DELETE' : 'POST';
 
       const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
@@ -651,15 +656,15 @@ export default function LiveTransactionList({
 
       const payload = await parsePayload(res);
       if (!res.ok) {
-        setNotice({ type: 'error', message: payload?.error || `Could not ${confirmVaultAction} space` });
+        setNotice({ type: 'error', message: payload?.error || `Could not ${actionType === 'delete_vault' ? 'delete' : 'leave'} space` });
         return;
       }
-      onBack(); // Successfully left/deleted, instantly navigate back
+      onBack();
     } catch (e: any) {
       setNotice({ type: 'error', message: e.message || 'Network error' });
     } finally {
       setIsActingOnVault(false);
-      setConfirmVaultAction(null);
+      setConfirmState(null);
     }
   };
 
@@ -809,7 +814,7 @@ export default function LiveTransactionList({
                     style={[styles.removeBtn, { marginTop: 0 }]}
                     onPress={(e) => {
                       e.stopPropagation();
-                      setConfirmDeleteId(item.id);
+                      setConfirmState({ type: 'delete_txn', txnId: item.id });
                     }}
                     disabled={isDeletingId === item.id}
                   >
@@ -860,10 +865,10 @@ export default function LiveTransactionList({
                   <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={() => setConfirmVaultAction('leave')} style={styles.dangerOutlineBtn}>
+              <TouchableOpacity onPress={() => setConfirmState({ type: 'leave_vault' })} style={styles.dangerOutlineBtn}>
                 <Text style={styles.dangerOutlineText}>Leave</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setConfirmVaultAction('delete')} style={styles.dangerOutlineBtn}>
+              <TouchableOpacity onPress={() => setConfirmState({ type: 'delete_vault' })} style={styles.dangerOutlineBtn}>
                 <Text style={styles.dangerOutlineText}>Delete</Text>
               </TouchableOpacity>
               <View style={styles.presenceBadge}>
@@ -1207,59 +1212,44 @@ export default function LiveTransactionList({
           </View>
         </Modal>
 
-        <Modal visible={Boolean(confirmVaultAction)} transparent animationType="fade">
+        <Modal visible={Boolean(confirmState)} transparent animationType="fade">
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.confirmOverlay}>
               <TouchableWithoutFeedback>
                 <View style={styles.confirmCard}>
-                  <Text style={styles.confirmTitle}>{confirmVaultAction === 'delete' ? 'Delete space?' : 'Leave space?'}</Text>
+                  <Text style={styles.confirmTitle}>
+                    {confirmState?.type === 'delete_vault' ? 'Delete space?' :
+                      confirmState?.type === 'leave_vault' ? 'Leave space?' :
+                        'Delete transaction?'}
+                  </Text>
                   <Text style={styles.confirmSubtitle}>
-                    {confirmVaultAction === 'delete'
-                      ? 'This space and all its transactions will be permanently deleted.'
-                      : 'You will lose access to this space and its transactions.'}
+                    {confirmState?.type === 'delete_vault' ? 'This space and all its transactions will be permanently deleted.' :
+                      confirmState?.type === 'leave_vault' ? 'You will lose access to this space and its transactions.' :
+                        'This cannot be undone.'}
                   </Text>
                   <View style={styles.confirmActions}>
-                    <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmVaultAction(null)}>
+                    <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmState(null)}>
                       <Text style={styles.confirmCancelText}>Cancel</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.confirmDelete}
-                      onPress={handleVaultAction}
-                      disabled={isActingOnVault}
+                      onPress={() => {
+                        if (confirmState?.type === 'delete_txn' && confirmState.txnId) {
+                          handleDeleteConfirmed(confirmState.txnId);
+                        } else {
+                          handleVaultAction();
+                        }
+                      }}
+                      disabled={isActingOnVault || (isDeletingId !== null)}
                     >
-                      {isActingOnVault ? (
+                      {isActingOnVault || (isDeletingId !== null) ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.confirmDeleteText}>{confirmVaultAction === 'delete' ? 'Delete' : 'Leave'}</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-
-        <Modal visible={Boolean(confirmDeleteId)} transparent animationType="fade">
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.confirmOverlay}>
-              <TouchableWithoutFeedback>
-                <View style={styles.confirmCard}>
-                  <Text style={styles.confirmTitle}>Delete transaction?</Text>
-                  <Text style={styles.confirmSubtitle}>This cannot be undone.</Text>
-                  <View style={styles.confirmActions}>
-                    <TouchableOpacity style={styles.confirmCancel} onPress={() => setConfirmDeleteId(null)}>
-                      <Text style={styles.confirmCancelText}>Keep it</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.confirmDelete}
-                      onPress={() => confirmDeleteId && handleDeleteConfirmed(confirmDeleteId)}
-                      disabled={Boolean(isDeletingId)}
-                    >
-                      {isDeletingId === confirmDeleteId ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.confirmDeleteText}>Remove</Text>
+                        <Text style={styles.confirmDeleteText}>
+                          {confirmState?.type === 'delete_vault' ? 'Delete' :
+                            confirmState?.type === 'leave_vault' ? 'Leave' :
+                              'Remove'}
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
