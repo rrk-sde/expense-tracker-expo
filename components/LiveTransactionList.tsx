@@ -966,9 +966,9 @@ export default function LiveTransactionList({
             }
           />
 
-          <View style={[styles.fabWrap, { left: fabPadH, right: fabPadH }]}>
+          <View style={[styles.fabWrap, { right: fabPadH }]}>
             <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
-              <Text style={styles.fabBtnText}>+ Add expense</Text>
+              <Text style={styles.fabBtnText}>+</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1787,23 +1787,26 @@ const styles = StyleSheet.create({
       web: { position: 'fixed' as 'absolute' },
       default: { position: 'absolute' },
     }),
-    bottom: 20,
-    left: 20,
+    bottom: 24,
     right: 20,
     zIndex: 50,
   },
   fabBtn: {
-    borderRadius: theme.radius.pill,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: theme.colors.brand,
-    paddingVertical: 12,
+    justifyContent: 'center',
     alignItems: 'center',
     ...shadows.float,
   },
   fabBtnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-    fontFamily: theme.typography.body,
+    fontSize: 32,
+    lineHeight: 38,
+    marginTop: -2, // Optical centering adjustment
+    fontWeight: '400',
+    fontFamily: theme.typography.display,
   },
   aiInsightsBtn: {
     marginTop: 18,
