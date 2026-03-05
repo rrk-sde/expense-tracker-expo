@@ -1064,19 +1064,20 @@ export default function LiveTransactionList({
                       </Text>
                     </View>
 
-                    <View style={[styles.modalActionRow, { marginTop: 20 }]}>
+                    <View style={[styles.modalActionRow, { marginTop: 20, flexWrap: 'wrap' }]}>
                       {!editingTxnId && (
-                        <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
+                        <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent', marginRight: 'auto' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
                           <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
                         </TouchableOpacity>
                       )}
-                      <View style={{ flex: 1 }} />
-                      <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsModalVisible(false); setEditingTxnId(null); }} disabled={isSubmitting}>
-                        <Text style={styles.modalCancelText}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
-                        {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>Save</Text>}
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 8, flexShrink: 0 }}>
+                        <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsModalVisible(false); setEditingTxnId(null); }} disabled={isSubmitting}>
+                          <Text style={styles.modalCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
+                          {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalSaveText}>Save</Text>}
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 </TouchableWithoutFeedback>
