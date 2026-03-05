@@ -34,6 +34,20 @@ export default function App() {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       document.body.style.backgroundColor = theme.colors.bg;
       document.documentElement.style.backgroundColor = theme.colors.bg;
+
+      // Safari scroll fix: html/body/#root must have explicit height so
+      // nested flex:1 containers have a bounded height and FlatList can scroll.
+      const style = document.createElement('style');
+      style.innerHTML = `
+        html, body, #root {
+          height: 100%;
+          overflow: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        /* Prevent double scrollbar on desktop */
+        body { overflow-x: hidden; }
+      `;
+      document.head.appendChild(style);
     }
   }, []);
 

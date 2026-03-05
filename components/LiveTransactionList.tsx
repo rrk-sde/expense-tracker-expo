@@ -25,6 +25,7 @@ interface Transaction {
   title: string;
   amount: number;
   type?: string;
+  description?: string;
   creatorId: string;
   createdAt: string;
   items?: { name: string; price: number }[];
@@ -248,6 +249,7 @@ export default function LiveTransactionList({
   const [scannedItems, setScannedItems] = useState<{ name: string; price: number }[]>([]);
   const [expandedTxnId, setExpandedTxnId] = useState<string | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
 
   const [confirmVaultAction, setConfirmVaultAction] = useState<'leave' | 'delete' | null>(null);
   const [isActingOnVault, setIsActingOnVault] = useState(false);
@@ -518,8 +520,15 @@ export default function LiveTransactionList({
     setIsSubmitting(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/transactions`, {
-        method: 'POST',
+      const isEditing = !!editingTxnId;
+      const url = isEditing
+        ? `${API_BASE_URL}/api/transactions/${editingTxnId}`
+        : `${API_BASE_URL}/api/transactions`;
+
+      const method = isEditing ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: txnTitle,
@@ -535,14 +544,16 @@ export default function LiveTransactionList({
 
       const payload = await parsePayload(res);
       if (!res.ok) {
-        setNotice({ type: 'error', message: payload?.error || 'Could not add expense' });
+        setNotice({ type: 'error', message: payload?.error || (isEditing ? 'Could not edit expense' : 'Could not add expense') });
         return;
       }
 
-      addFeed(`Added expense: ${txnTitle} (₹${amountStr})`);
-      setTxnTitle('DR ');
+      addFeed(isEditing ? `Edited expense: ${txnTitle}` : `Added expense: ${txnTitle} (₹${amountStr})`);
+      setTxnTitle('');
       setAmountStr('');
       setScannedItems([]);
+      setSelectedMembers([]);
+      setEditingTxnId(null);
       setIsModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ['transactions', vaultId, user.id] });
       queryClient.invalidateQueries({ queryKey: ['velocity', vaultId, user.id] });
@@ -711,6 +722,11 @@ export default function LiveTransactionList({
                   </View>
                 )}
               </View>
+              {item.description ? (
+                <Text style={styles.txnDescription}>
+                  ✦ {item.description}
+                </Text>
+              ) : null}
               <Text style={styles.txnMeta}>{time} by {createdBy}</Text>
             </View>
 
@@ -724,20 +740,37 @@ export default function LiveTransactionList({
                 </View>
               )}
               {item.creatorId === user.id && (
-                <TouchableOpacity
-                  style={styles.removeBtn}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setConfirmDeleteId(item.id);
-                  }}
-                  disabled={isDeletingId === item.id}
-                >
-                  {isDeletingId === item.id ? (
-                    <ActivityIndicator size="small" color={theme.colors.danger} />
-                  ) : (
-                    <Text style={styles.removeText}>Remove</Text>
-                  )}
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, justifyContent: 'flex-end' }}>
+                  <TouchableOpacity
+                    style={[styles.removeBtn, { marginTop: 0, borderColor: '#D1E8DD', backgroundColor: '#EDF5F1' }]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setEditingTxnId(item.id);
+                      setTxnTitle(item.title);
+                      setAmountStr(String(item.amount));
+                      setTxnType((item.type as 'DR' | 'CR') || 'DR');
+                      setSelectedMembers(item.splitWith || []);
+                      setScannedItems(item.items || []);
+                      setIsModalVisible(true);
+                    }}
+                  >
+                    <Text style={[styles.removeText, { color: theme.colors.brandStrong }]}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.removeBtn, { marginTop: 0 }]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setConfirmDeleteId(item.id);
+                    }}
+                    disabled={isDeletingId === item.id}
+                  >
+                    {isDeletingId === item.id ? (
+                      <ActivityIndicator size="small" color={theme.colors.danger} />
+                    ) : (
+                      <Text style={styles.removeText}>Remove</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           </View>
@@ -770,7 +803,7 @@ export default function LiveTransactionList({
 
           <View style={styles.topActions}>
             {isDesktop && (
-              <TouchableOpacity style={styles.addBtnDesktop} onPress={() => { setTxnTitle(''); setTxnType('DR'); setIsModalVisible(true); }}>
+              <TouchableOpacity style={styles.addBtnDesktop} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
                 <Text style={styles.addBtnDesktopText}>+ Add expense</Text>
               </TouchableOpacity>
             )}
@@ -787,102 +820,108 @@ export default function LiveTransactionList({
           </View>
         </View>
 
-        {(isLoading && transactions.length === 0) ? (
-          <View style={[styles.loader, { flex: 1, marginTop: 100 }]}>
-            <ActivityIndicator size="large" color={theme.colors.brand} />
-            <Text style={{ marginTop: 16, color: theme.colors.textMuted, fontFamily: theme.typography.body }}>
-              Loading space activity...
-            </Text>
-          </View>
-        ) : (
-          <>
-            <View style={styles.heroCard}>
-              <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
-              <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
-              <Text style={styles.heroSubtitle}>
-                Filter by month, year, and date range while keeping real-time updates from your team.
-              </Text>
-              <View style={styles.heroStats}>
-                <View style={styles.heroStatItem}>
-                  <Text style={styles.heroStatValue}>{totalCount}</Text>
-                  <Text style={styles.heroStatLabel}>Total results</Text>
-                </View>
-                <View style={styles.heroStatItem}>
-                  <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
-                  <Text style={styles.heroStatLabel}>7-day spend</Text>
-                </View>
-                <View style={styles.heroStatItem}>
-                  <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
-                  <Text style={styles.heroStatLabel}>7-day count</Text>
-                </View>
-              </View>
-
-              <TouchableOpacity style={styles.aiInsightsBtn} onPress={fetchAIInsights}>
-                <Text style={styles.aiInsightsText}>✨ AI Spending Insights</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.quickAddCard}>
-              <View style={styles.quickAddInputWrap}>
-                <TextInput
-                  style={styles.quickAddInput}
-                  placeholder='e.g. "₹250 for travel via Uber"'
-                  placeholderTextColor={theme.colors.textMuted}
-                  value={quickAddText}
-                  onChangeText={setQuickAddText}
-                  onSubmitEditing={handleQuickAdd}
-                />
-                <TouchableOpacity
-                  style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
-                  onPress={handleQuickAdd}
-                  disabled={isParsingText}
-                >
-                  {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
-            </View>
-
-            <View style={styles.filterCard}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search expenses"
-                placeholderTextColor={theme.colors.textMuted}
-                value={searchInput}
-                onChangeText={setSearchInput}
-              />
-
-              <View style={styles.filterMetaRow}>
-                <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setFilterSheetVisible(true)}>
-                  <Text style={styles.filterOpenBtnText}>Filters</Text>
-                </TouchableOpacity>
-                <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
-                {(appliedFromDate || appliedToDate) && (
-                  <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
-                )}
-              </View>
-            </View>
-
-            {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
-            {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
-          </>
-        )}
-
         <FlatList
           data={transactions}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          style={{ flex: 1 }}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           onEndReachedThreshold={0.35}
           onEndReached={() => {
             if (hasNextPage && !isFetchingNextPage) fetchNextPage();
           }}
+          ListHeaderComponent={
+            <>
+              {(isLoading && transactions.length === 0) ? (
+                <View style={[styles.loader, { marginTop: 100, marginBottom: 40 }]}>
+                  <ActivityIndicator size="large" color={theme.colors.brand} />
+                  <Text style={{ marginTop: 16, color: theme.colors.textMuted, fontFamily: theme.typography.body }}>
+                    Loading space activity...
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.heroCard}>
+                    <Text style={styles.heroKicker}>SPACE ACTIVITY</Text>
+                    <Text style={styles.heroTitle}>Clean history, fast search, and full control.</Text>
+                    <Text style={styles.heroSubtitle}>
+                      Filter by month, year, and date range while keeping real-time updates from your team.
+                    </Text>
+                    <View style={styles.heroStats}>
+                      <View style={styles.heroStatItem}>
+                        <Text style={styles.heroStatValue}>{totalCount}</Text>
+                        <Text style={styles.heroStatLabel}>Total results</Text>
+                      </View>
+                      <View style={styles.heroStatItem}>
+                        <Text style={styles.heroStatValue}>₹{velocity?.totalAmount7d?.toFixed(0) || '0'}</Text>
+                        <Text style={styles.heroStatLabel}>7-day spend</Text>
+                      </View>
+                      <View style={styles.heroStatItem}>
+                        <Text style={styles.heroStatValue}>{velocity?.count7d || 0}</Text>
+                        <Text style={styles.heroStatLabel}>7-day count</Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity style={styles.aiInsightsBtn} onPress={fetchAIInsights}>
+                      <Text style={styles.aiInsightsText}>✨ AI Spending Insights</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.quickAddCard}>
+                    <View style={styles.quickAddInputWrap}>
+                      <TextInput
+                        style={styles.quickAddInput}
+                        placeholder='e.g. "₹250 for travel via Uber"'
+                        placeholderTextColor={theme.colors.textMuted}
+                        value={quickAddText}
+                        onChangeText={setQuickAddText}
+                        onSubmitEditing={handleQuickAdd}
+                      />
+                      <TouchableOpacity
+                        style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
+                        onPress={handleQuickAdd}
+                        disabled={isParsingText}
+                      >
+                        {isParsingText ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.quickAddBtnText}>Go</Text>}
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+                  </View>
+
+                  <View style={styles.filterCard}>
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search expenses"
+                      placeholderTextColor={theme.colors.textMuted}
+                      value={searchInput}
+                      onChangeText={setSearchInput}
+                    />
+
+                    <View style={styles.filterMetaRow}>
+                      <TouchableOpacity style={styles.filterOpenBtn} onPress={() => setFilterSheetVisible(true)}>
+                        <Text style={styles.filterOpenBtnText}>Filters</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.filterMetaText}>{isRefetching ? 'Updating...' : `${totalCount} results`}</Text>
+                      {(appliedFromDate || appliedToDate) && (
+                        <Text style={styles.filterMetaText}>{appliedFromDate || '...'} to {appliedToDate || '...'}</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {notice && <Text style={notice.type === 'error' ? styles.noticeError : styles.noticeSuccess}>{notice.message}</Text>}
+                  {error && <Text style={styles.noticeError}>{(error as any)?.message || 'Failed to load transactions'}</Text>}
+                </>
+              )}
+            </>
+          }
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateTitle}>No expenses found</Text>
-              <Text style={styles.emptyStateText}>Try clearing filters or add a new expense.</Text>
-            </View>
+            isLoading ? null : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateTitle}>No expenses found</Text>
+                <Text style={styles.emptyStateText}>Try clearing filters or add a new expense.</Text>
+              </View>
+            )
           }
           ListFooterComponent={
             <View style={styles.footerLoad}>
@@ -900,7 +939,7 @@ export default function LiveTransactionList({
         />
 
         <View style={[styles.fabWrap, { left: fabPadH, right: fabPadH }]}>
-          <TouchableOpacity style={styles.fabBtn} onPress={() => { setTxnTitle(''); setTxnType('DR'); setIsModalVisible(true); }}>
+          <TouchableOpacity style={styles.fabBtn} onPress={() => { setEditingTxnId(null); setTxnTitle(''); setTxnType('DR'); setAmountStr(''); setSelectedMembers([]); setScannedItems([]); setIsModalVisible(true); }}>
             <Text style={styles.fabBtnText}>+ Add expense</Text>
           </TouchableOpacity>
         </View>
@@ -909,7 +948,7 @@ export default function LiveTransactionList({
       <Modal visible={isModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add transaction</Text>
+            <Text style={styles.modalTitle}>{editingTxnId ? 'Edit transaction' : 'Add transaction'}</Text>
 
             <View style={styles.typeToggleRow}>
               <TouchableOpacity
@@ -992,11 +1031,13 @@ export default function LiveTransactionList({
             </View>
 
             <View style={[styles.modalActionRow, { marginTop: 20 }]}>
-              <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
-                <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
-              </TouchableOpacity>
+              {!editingTxnId && (
+                <TouchableOpacity style={[styles.modalCancelBtn, { backgroundColor: '#F0F5F1', borderColor: 'transparent' }]} onPress={handleScanReceipt} disabled={isSubmitting}>
+                  <Text style={[styles.modalCancelText, { color: theme.colors.brand }]}>🎥 Scan Receipt</Text>
+                </TouchableOpacity>
+              )}
               <View style={{ flex: 1 }} />
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setIsModalVisible(false)} disabled={isSubmitting}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setIsModalVisible(false); setEditingTxnId(null); }} disabled={isSubmitting}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.modalSaveBtn, !canSubmit && styles.modalSaveBtnDisabled]} onPress={handleSubmit} disabled={!canSubmit}>
@@ -1385,11 +1426,12 @@ export default function LiveTransactionList({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 },
+  screen: { flex: 1, overflow: 'hidden' as any },
   container: {
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 10,
+    overflow: 'hidden' as any,
   },
   containerWide: {
     maxWidth: 760,
@@ -1614,6 +1656,15 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontFamily: theme.typography.body,
+  },
+  txnDescription: {
+    marginTop: 4,
+    marginBottom: 2,
+    color: theme.colors.brandStrong,
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontFamily: theme.typography.body,
+    opacity: 0.85,
   },
   txnRight: {
     alignItems: 'flex-end',

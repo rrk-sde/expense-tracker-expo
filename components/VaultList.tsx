@@ -72,6 +72,10 @@ export default function VaultList({
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersVaultName, setMembersVaultName] = useState('');
 
+  const [editingVaultId, setEditingVaultId] = useState<string | null>(null);
+  const [editingVaultName, setEditingVaultName] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+
   const ctaPulse = useRef(new Animated.Value(1)).current;
 
   const templates = ['Trip', 'Flat', 'Family', 'Office', 'Groceries'];
@@ -128,6 +132,32 @@ export default function VaultList({
       console.error('Failed to fetch members', e);
     } finally {
       setMembersLoading(false);
+    }
+  };
+
+  const renameVault = async (vaultId: string) => {
+    const trimmed = editingVaultName.trim();
+    if (!trimmed) return;
+    setIsRenaming(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/vaults/${vaultId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, name: trimmed }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        setFeedback({ type: 'error', message: payload?.error || 'Could not rename space.' });
+        return;
+      }
+      setVaults((prev) => prev.map((v) => v.id === vaultId ? { ...v, name: trimmed } : v));
+      addFeed(`Renamed space to "${trimmed}"`);
+      setFeedback({ type: 'success', message: `Renamed to "${trimmed}"` });
+    } catch {
+      setFeedback({ type: 'error', message: 'Network error. Please try again.' });
+    } finally {
+      setIsRenaming(false);
+      setEditingVaultId(null);
     }
   };
 
@@ -243,16 +273,59 @@ export default function VaultList({
   const renderSpace = ({ item }: { item: Space }) => {
     const inviteCode = String(item.id).slice(0, 8).toUpperCase();
     const initials = item.name?.trim()?.charAt(0)?.toUpperCase() || 'S';
+    const isEditing = editingVaultId === item.id;
 
     return (
       <View style={[styles.cardWrap, numColumns === 2 && styles.cardWrapGrid2, numColumns === 3 && styles.cardWrapGrid3]}>
-        <TouchableOpacity style={styles.spaceCard} onPress={() => onSelectVault(item.id)}>
+        <TouchableOpacity style={styles.spaceCard} onPress={() => !isEditing && onSelectVault(item.id)} activeOpacity={isEditing ? 1 : 0.8}>
           <View style={styles.spaceTop}>
             <View style={styles.spaceAvatar}>
               <Text style={styles.spaceAvatarText}>{initials}</Text>
             </View>
             <View style={styles.spaceTitleWrap}>
-              <Text style={styles.spaceTitle}>{item.name}</Text>
+              {isEditing ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <TextInput
+                    style={styles.renameInput}
+                    value={editingVaultName}
+                    onChangeText={setEditingVaultName}
+                    autoFocus
+                    onSubmitEditing={() => renameVault(item.id)}
+                    returnKeyType="done"
+                    maxLength={60}
+                  />
+                  <TouchableOpacity
+                    style={styles.renameSaveBtn}
+                    onPress={() => renameVault(item.id)}
+                    disabled={isRenaming}
+                  >
+                    {isRenaming
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.renameSaveBtnText}>Save</Text>
+                    }
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.renameCancelBtn}
+                    onPress={() => setEditingVaultId(null)}
+                  >
+                    <Text style={styles.renameCancelBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 6 }}>
+                  <Text style={[styles.spaceTitle, { flex: 1 }]}>{item.name}</Text>
+                  <TouchableOpacity
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setEditingVaultId(item.id);
+                      setEditingVaultName(item.name);
+                    }}
+                  >
+                    <Text style={styles.pencilIcon}>✎</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
               <Text style={styles.spaceCode}>INV {inviteCode}</Text>
             </View>
           </View>
@@ -1045,5 +1118,54 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.brandStrong,
     fontFamily: theme.typography.body,
+  },
+  pencilIcon: {
+    fontSize: 16,
+    color: theme.colors.brandStrong,
+    opacity: 0.6,
+  },
+  renameInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: theme.colors.brand,
+    borderRadius: theme.radius.md,
+    backgroundColor: '#F2FAF5',
+    color: theme.colors.textPrimary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontFamily: theme.typography.body,
+    fontSize: 15,
+    fontWeight: '700',
+    minHeight: 36,
+  },
+  renameSaveBtn: {
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: 32,
+  },
+  renameSaveBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 13,
+    fontFamily: theme.typography.body,
+  },
+  renameCancelBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FDF1F0',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  renameCancelBtnText: {
+    color: theme.colors.danger,
+    fontWeight: '800',
+    fontSize: 14,
   },
 });
