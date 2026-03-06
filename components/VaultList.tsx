@@ -17,7 +17,8 @@ import {
 } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-native-markdown-display';
-
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
 import { shadows, theme } from '../theme';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (
@@ -99,9 +100,108 @@ export default function VaultList({
   const [editingVaultName, setEditingVaultName] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
   const [composerHeight, setComposerHeight] = useState(52);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const voicePulse = useRef(new Animated.Value(1)).current;
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
   const queryClient = useQueryClient();
   const ctaPulse = useRef(new Animated.Value(1)).current;
+
+  // Voice recognition — only active in freeform mode
+  // (handled via browser API on web, expo-speech-recognition on native)
+
+  useEffect(() => {
+    if (isVoiceListening) {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(voicePulse, { toValue: 1.18, duration: 450, useNativeDriver: true }),
+          Animated.timing(voicePulse, { toValue: 1.0, duration: 450, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
+      return () => anim.stop();
+    } else {
+      voicePulse.setValue(1);
+    }
+  }, [isVoiceListening]);
+
+  const handleVoiceInput = async () => {
+    // --- WEB: browser SpeechRecognition ---
+    if (Platform.OS === 'web') {
+      if (isVoiceListening) {
+        const rec = (globalThis as any)._voiceRecVL;
+        if (rec) { rec.stop(); (globalThis as any)._voiceRecVL = null; }
+        setIsVoiceListening(false);
+        return;
+      }
+      const SR = (globalThis as any).SpeechRecognition || (globalThis as any).webkitSpeechRecognition;
+      if (!SR) {
+        setFeedback({ type: 'error', message: '🎙️ Voice not supported in this browser. Try Chrome or Edge!' });
+        return;
+      }
+      const rec = new SR();
+      (globalThis as any)._voiceRecVL = rec;
+      rec.lang = 'en-IN';
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e: any) => {
+        const t = e.results?.[0]?.[0]?.transcript || '';
+        if (t && actionMode === 'freeform') setFreeformText(t);
+      };
+      rec.onend = () => setIsVoiceListening(false);
+      rec.onerror = () => setIsVoiceListening(false);
+      setIsVoiceListening(true);
+      rec.start();
+      return;
+    }
+
+    // --- NATIVE (Expo Go): expo-av recording + Gemini transcription ---
+    if (isVoiceListening) {
+      // Stop recording and transcribe
+      try {
+        await recordingRef.current?.stopAndUnloadAsync();
+        const uri = recordingRef.current?.getURI();
+        recordingRef.current = null;
+        setIsVoiceListening(false);
+
+        if (uri) {
+          setIsTranscribing(true);
+          const base64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: 'base64' as any,
+          });
+          const res = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: base64, mimeType: 'audio/mp4' }),
+          });
+          const data = await res.json();
+          if (data.transcript && actionMode === 'freeform') setFreeformText(data.transcript);
+          else if (data.error) setFeedback({ type: 'error', message: 'Transcription failed: ' + data.error });
+        }
+      } catch (e: any) {
+        setFeedback({ type: 'error', message: '🎙️ Error processing: ' + (e.message || String(e)) });
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
+
+    // Start recording
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        setFeedback({ type: 'error', message: 'Microphone permission required for voice input' });
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      recordingRef.current = recording;
+      setIsVoiceListening(true);
+    } catch (e: any) {
+      setFeedback({ type: 'error', message: '🎙️ Could not start recording. ' + (e.message || 'Check permissions.') });
+    }
+  };
 
   const templates = ['Trip', 'Flat', 'Family', 'Office', 'Groceries'];
 
@@ -524,6 +624,20 @@ export default function VaultList({
                         }}
                         style={[styles.composerInput, { height: composerHeight }]}
                       />
+
+                      {actionMode === 'freeform' && (
+                        <Animated.View style={{ flexShrink: 0, transform: [{ scale: isTranscribing ? 1 : voicePulse }] }}>
+                          <TouchableOpacity
+                            style={[styles.micBtn, isVoiceListening && styles.micBtnActive, isTranscribing && styles.micBtnTranscribing]}
+                            onPress={handleVoiceInput}
+                            disabled={isTranscribing}
+                          >
+                            {isTranscribing
+                              ? <ActivityIndicator size="small" color={theme.colors.brand} />
+                              : <Text style={styles.micIcon}>{isVoiceListening ? '⏹' : '🎙️'}</Text>}
+                          </TouchableOpacity>
+                        </Animated.View>
+                      )}
 
                       <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
                         <TouchableOpacity
@@ -1365,4 +1479,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: theme.typography.body,
   },
+  micBtn: {
+    backgroundColor: '#EEF5EF',
+    borderRadius: theme.radius.md,
+    height: 44,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  micBtnActive: {
+    backgroundColor: '#FFE8E8',
+    borderColor: '#E53935',
+  },
+  micBtnTranscribing: {
+    backgroundColor: '#EEF5EF',
+    borderColor: theme.colors.brand,
+    opacity: 0.8,
+  },
+  micIcon: {
+    fontSize: 20,
+  },
 });
+

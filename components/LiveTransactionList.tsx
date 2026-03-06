@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Keyboard,
   Modal,
@@ -17,6 +18,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import Pusher from 'pusher-js';
@@ -334,6 +337,10 @@ export default function LiveTransactionList({
 
   const [quickAddText, setQuickAddText] = useState('');
   const [isParsingText, setIsParsingText] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const voicePulse = useRef(new Animated.Value(1)).current;
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
@@ -412,6 +419,99 @@ export default function LiveTransactionList({
       setNotice({ type: 'error', message: e.message });
     } finally {
       setIsParsingText(false);
+    }
+  };
+
+  // Pulse animation while recording
+  useEffect(() => {
+    if (isVoiceListening) {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(voicePulse, { toValue: 1.18, duration: 450, useNativeDriver: true }),
+          Animated.timing(voicePulse, { toValue: 1.0, duration: 450, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
+      return () => anim.stop();
+    } else {
+      voicePulse.setValue(1);
+    }
+  }, [isVoiceListening]);
+
+  const handleVoiceInput = async () => {
+    // --- WEB: browser SpeechRecognition ---
+    if (Platform.OS === 'web') {
+      if (isVoiceListening) {
+        const rec = (globalThis as any)._voiceRecLTL;
+        if (rec) { rec.stop(); (globalThis as any)._voiceRecLTL = null; }
+        setIsVoiceListening(false);
+        return;
+      }
+      const SR = (globalThis as any).SpeechRecognition || (globalThis as any).webkitSpeechRecognition;
+      if (!SR) {
+        setNotice({ type: 'error', message: '🎙️ Voice not supported in this browser. Try Chrome or Edge!' });
+        return;
+      }
+      const rec = new SR();
+      (globalThis as any)._voiceRecLTL = rec;
+      rec.lang = 'en-IN';
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e: any) => {
+        const t = e.results?.[0]?.[0]?.transcript || '';
+        if (t) setQuickAddText(t);
+      };
+      rec.onend = () => setIsVoiceListening(false);
+      rec.onerror = () => setIsVoiceListening(false);
+      setIsVoiceListening(true);
+      rec.start();
+      return;
+    }
+
+    // --- NATIVE (Expo Go): expo-av recording + Gemini transcription ---
+    if (isVoiceListening) {
+      // Stop recording and transcribe
+      try {
+        await recordingRef.current?.stopAndUnloadAsync();
+        const uri = recordingRef.current?.getURI();
+        recordingRef.current = null;
+        setIsVoiceListening(false);
+
+        if (uri) {
+          setIsTranscribing(true);
+          const base64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: 'base64' as any,
+          });
+          const res = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: base64, mimeType: 'audio/mp4' }),
+          });
+          const data = await res.json();
+          if (data.transcript) setQuickAddText(data.transcript);
+          else if (data.error) setNotice({ type: 'error', message: 'Transcription failed: ' + data.error });
+        }
+      } catch (e: any) {
+        setNotice({ type: 'error', message: '🎙️ Error processing audio: ' + (e.message || String(e)) });
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
+
+    // Start recording
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        setNotice({ type: 'error', message: 'Microphone permission required for voice input' });
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      recordingRef.current = recording;
+      setIsVoiceListening(true);
+    } catch (e: any) {
+      setNotice({ type: 'error', message: '🎙️ Could not start recording. ' + (e.message || 'Check permissions.') });
     }
   };
 
@@ -945,6 +1045,18 @@ export default function LiveTransactionList({
                           onSubmitEditing={handleQuickAdd}
                           returnKeyType="go"
                         />
+                        {/* Mic button — web: browser SpeechRecognition, native: expo-av + Gemini */}
+                        <Animated.View style={{ transform: [{ scale: isTranscribing ? 1 : voicePulse }] }}>
+                          <TouchableOpacity
+                            style={[styles.micBtn, isVoiceListening && styles.micBtnActive, isTranscribing && styles.micBtnTranscribing]}
+                            onPress={handleVoiceInput}
+                            disabled={isTranscribing}
+                          >
+                            {isTranscribing
+                              ? <ActivityIndicator size="small" color={theme.colors.brand} />
+                              : <Text style={styles.micIcon}>{isVoiceListening ? '⏹' : '🎙️'}</Text>}
+                          </TouchableOpacity>
+                        </Animated.View>
                         <TouchableOpacity
                           style={[styles.quickAddBtn, !quickAddText.trim() && { opacity: 0.5 }]}
                           onPress={handleQuickAdd}
@@ -954,7 +1066,9 @@ export default function LiveTransactionList({
                         </TouchableOpacity>
                       </View>
                       <View style={styles.quickAddFooterRow}>
-                        <Text style={styles.quickAddHint}>Natural Language: Just type and AI will fill the form 🚀</Text>
+                        <Text style={styles.quickAddHint}>
+                          {isVoiceListening ? '🔴 Listening... tap mic to stop' : 'Natural Language: Just type and AI will fill the form 🚀'}
+                        </Text>
                         <TouchableOpacity style={styles.scanReceiptBtn} onPress={handleScanReceipt}>
                           <Text style={styles.scanReceiptBtnText}>📷 Scan Receipt</Text>
                         </TouchableOpacity>
@@ -1946,6 +2060,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.brand,
     fontFamily: theme.typography.body,
+  },
+  micBtn: {
+    backgroundColor: '#EEF5EF',
+    borderRadius: theme.radius.md,
+    height: 44,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  micBtnActive: {
+    backgroundColor: '#FFE8E8',
+    borderColor: '#E53935',
+  },
+  micBtnTranscribing: {
+    backgroundColor: '#EEF5EF',
+    borderColor: theme.colors.brand,
+    opacity: 0.8,
+  },
+  micIcon: {
+    fontSize: 20,
   },
   tabRow: {
     flexDirection: 'row',
