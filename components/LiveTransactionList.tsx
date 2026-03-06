@@ -858,7 +858,10 @@ export default function LiveTransactionList({
         <View style={[styles.container, isDesktop && styles.containerWide]}>
           <View style={styles.topBar}>
             <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-              <Text style={styles.backBtnText}>All Spaces</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.backBtnArrow}>‹</Text>
+                <Text style={styles.backBtnText}>All Spaces</Text>
+              </View>
             </TouchableOpacity>
 
             <View style={styles.topActions}>
@@ -1554,15 +1557,25 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderWidth: 1.5,
+    borderColor: theme.colors.brand,
+    backgroundColor: '#EDF5F1',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backBtnArrow: {
+    color: theme.colors.brand,
+    fontWeight: '900',
+    fontSize: 22,
+    lineHeight: 22,
+    marginTop: -1,
   },
   backBtnText: {
-    color: theme.colors.textPrimary,
+    color: theme.colors.brand,
     fontWeight: '700',
+    fontSize: 14,
     fontFamily: theme.typography.body,
   },
   addBtnDesktop: {

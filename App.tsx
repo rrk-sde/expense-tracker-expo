@@ -8,7 +8,15 @@ import LiveTransactionList from './components/LiveTransactionList';
 import VaultList from './components/VaultList';
 import { theme } from './theme';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,                    // Don't retry 3 times on every failure
+      refetchOnWindowFocus: false, // Pusher handles real-time, no need to refetch on tab switch
+      gcTime: 1000 * 60 * 5,      // Keep cache alive 5 min after component unmount
+    },
+  },
+});
 
 const storage = {
   getItem: (key: string): string | null => {

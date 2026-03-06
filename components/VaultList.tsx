@@ -98,6 +98,7 @@ export default function VaultList({
   const [editingVaultId, setEditingVaultId] = useState<string | null>(null);
   const [editingVaultName, setEditingVaultName] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(52);
 
   const queryClient = useQueryClient();
   const ctaPulse = useRef(new Animated.Value(1)).current;
@@ -491,7 +492,6 @@ export default function VaultList({
                     </Text>
                     <View style={styles.composerRow}>
                       <TextInput
-                        style={styles.composerInput}
                         placeholder={
                           actionMode === 'create' ? 'e.g. Goa Trip 2024' :
                             actionMode === 'join' ? 'XXXX-XXXX' :
@@ -515,6 +515,14 @@ export default function VaultList({
                         }
                         autoCapitalize={actionMode === 'join' ? 'characters' : 'sentences'}
                         multiline={actionMode === 'freeform'}
+                        onContentSizeChange={(event) => {
+                          if (actionMode === 'freeform') {
+                            setComposerHeight(Math.max(52, Math.min(250, event.nativeEvent.contentSize.height)));
+                          } else {
+                            setComposerHeight(52);
+                          }
+                        }}
+                        style={[styles.composerInput, { height: composerHeight }]}
                       />
 
                       <Animated.View style={{ flexShrink: 0, transform: [{ scale: isPrimaryEnabled ? ctaPulse : 1 }] }}>
@@ -900,16 +908,17 @@ const styles = StyleSheet.create({
   },
   composerInput: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.md,
     backgroundColor: '#FBFDFB',
     color: theme.colors.textPrimary,
     paddingHorizontal: 12,
     paddingVertical: 11,
-    minHeight: 52,
     minWidth: 0,
     fontFamily: theme.typography.body,
+    fontSize: 16,
+    textAlignVertical: 'top',
   },
   composerBtn: {
     minHeight: 52,
